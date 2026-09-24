@@ -10,6 +10,14 @@ deliverables are named in §3 of the manual:
 | D3 | The §2.8 creativity program, immediately executable, no install / no extra libraries | §3c | `creativity/<name>.html` |
 | D4 | (supporting) Reproducible figure set | — | `results/` |
 
+## Decisions taken
+
+| Question | Decision |
+|---|---|
+| Primary graded code artefact | **`matlab/Lab1.m`** — one `.m` file, matching §3b literally. Verified by real execution under Octave here. Python is a figure-rendering mirror, not a submitted file. |
+| §2.8 topic | **Interactive frequency-domain notch filter** — directly extends §2.5. |
+| Report format | **Markdown → PDF**: `report/report.md` is the working copy, `report/Lab1_Report.pdf` the submission. |
+
 ## Strategy
 
 The container has no MATLAB licence, so the work is done on two legs:
@@ -114,7 +122,19 @@ Single self-contained HTML file, opens in any browser, no install, no build
 step — the same shape as the reference `gaussian low pass filter pipeline.html`
 (three.js pulled from a CDN, everything else inline). Written up as motivation →
 problem statement → how it was developed → results, per (a)–(d).
-*Blocked on topic choice:* see below.
+**Topic chosen: an interactive frequency-domain notch filter.** The program
+loads an image (or its own built-in test pattern carrying a synthetic
+diagonal interference, mirroring `pck-int.jpg`), shows the live `fftshift`ed
+power spectrum scaled by `S.^0.1` exactly as §2.5(b) prescribes, lets the user
+click spectral peaks to notch them — auto-mirroring each notch to its
+conjugate-symmetric partner — and re-renders the inverse transform live, with
+a PSNR readout against the clean source.
+
+Constraint honoured: **zero external dependencies**. Pure vanilla JavaScript
+and Canvas, including a hand-written radix-2 Cooley-Tukey FFT, so the file
+satisfies §2.8(d)'s "no installation and other libraries and plugins" more
+strictly than the reference example does (that one pulls three.js from a CDN
+and therefore needs a network connection).
 
 ## Inputs still needed
 
@@ -131,8 +151,7 @@ problem statement → how it was developed → results, per (a)–(d).
 3. **Name and matriculation number**, for the report title page and for the
    `"xxx (your name)'s comment"` annotations the manual asks for, and which
    course code applies (SC4061 / CE4003 / CZ4003).
-4. **§2.8 topic decision** — candidate proposals are listed in the chat summary.
-5. **MATLAB access**, confirm yes/no. If yes, `matlab/Lab1.m` gets a real run
+4. **MATLAB access**, confirm yes/no. If yes, `matlab/Lab1.m` gets a real run
    before submission; if no, it ships validated against the Python mirror and,
    where the toolbox overlap allows, GNU Octave.
 

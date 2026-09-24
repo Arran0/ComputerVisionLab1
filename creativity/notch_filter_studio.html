@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notch Filter Studio</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --panel2:#1b2027; --line:#2a313a;
+    --ink:#e6edf3; --muted:#8b98a5; --accent:#4facfe; --accent2:#7ee787;
+    --warn:#ffa657;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:14px}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);
+         display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;background:var(--panel)}
+  h1{font-size:1.05rem;margin:0;color:var(--accent);letter-spacing:.3px}
+  .sub{font-size:.8rem;color:var(--muted)}
+  main{padding:16px 20px 40px;max-width:1500px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:1000px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:12px;display:flex;flex-direction:column;gap:8px}
+  .card h2{font-size:.72rem;margin:0;text-transform:uppercase;letter-spacing:1.2px;
+           color:var(--muted);font-weight:600}
+  canvas{width:100%;aspect-ratio:1;image-rendering:pixelated;background:#000;
+         border:1px solid var(--line);border-radius:6px;display:block}
+  #specCanvas{cursor:crosshair}
+  .hint{font-size:.72rem;color:var(--muted);min-height:2.4em;line-height:1.4}
+  .bar{margin-top:16px;background:var(--panel);border:1px solid var(--line);
+       border-radius:10px;padding:14px 16px;display:flex;gap:22px;flex-wrap:wrap;align-items:center}
+  .ctl{display:flex;flex-direction:column;gap:5px}
+  .ctl label{font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+         border-radius:6px;padding:7px 13px;cursor:pointer;font-size:.82rem;font-family:inherit}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:var(--accent);color:#06243a;border-color:var(--accent);font-weight:600}
+  button.primary:hover{filter:brightness(1.1);color:#06243a}
+  input[type=range]{width:150px;accent-color:var(--accent)}
+  select,input[type=file]{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+         border-radius:6px;padding:6px;font-size:.8rem;font-family:inherit}
+  .val{font-variant-numeric:tabular-nums;color:var(--accent);font-size:.8rem}
+  .stats{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .stat .k{font-size:.66rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+  .stat .v{font-size:1.15rem;font-variant-numeric:tabular-nums;margin-top:3px;color:var(--accent2)}
+  details{margin-top:16px;background:var(--panel);border:1px solid var(--line);
+          border-radius:10px;padding:12px 16px}
+  summary{cursor:pointer;font-weight:600;color:var(--accent)}
+  details p,details li{color:#c3ced9;line-height:1.65;font-size:.85rem}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;color:var(--warn);font-size:.85em}
+  .tag{display:inline-block;background:var(--panel2);border:1px solid var(--line);
+       border-radius:20px;padding:2px 10px;font-size:.7rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Notch Filter Studio</h1>
+  <span class="sub">Interactive frequency-domain interference removal &mdash; SC4061 Lab 1, &sect;2.8</span>
+  <span class="tag">no libraries &middot; no install &middot; works offline</span>
+</header>
+
+<main>
+  <div class="grid">
+    <div class="card">
+      <h2>1 &middot; Input &mdash; spatial domain</h2>
+      <canvas id="srcCanvas" width="256" height="256"></canvas>
+      <div class="hint" id="srcHint">Synthetic test image corrupted by a diagonal
+        sinusoidal interference pattern, in the manner of <code>pck-int.jpg</code>.</div>
+    </div>
+    <div class="card">
+      <h2>2 &middot; Power spectrum &mdash; click to notch</h2>
+      <canvas id="specCanvas" width="256" height="256"></canvas>
+      <div class="hint" id="specHint">Displaying <code>fftshift(S.^0.1)</code>. DC is at
+        the centre. <strong>Click a bright off-centre peak</strong> to zero it; its
+        conjugate-symmetric twin is notched automatically.</div>
+    </div>
+    <div class="card">
+      <h2>3 &middot; Output &mdash; inverse transform</h2>
+      <canvas id="outCanvas" width="256" height="256"></canvas>
+      <div class="hint" id="outHint">Real part of <code>ifft2(F)</code> after notching.</div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="ctl">
+      <label for="radius">Notch radius <span class="val" id="radiusVal">2 px</span></label>
+      <input type="range" id="radius" min="1" max="12" step="1" value="2">
+    </div>
+    <div class="ctl">
+      <label for="profile">Notch profile</label>
+      <select id="profile">
+        <option value="ideal">Ideal (hard zero)</option>
+        <option value="gauss">Gaussian (soft roll-off)</option>
+      </select>
+    </div>
+    <div class="ctl">
+      <label>Automatic</label>
+      <button class="primary" id="autoBtn">Detect &amp; notch peaks</button>
+    </div>
+    <div class="ctl">
+      <label for="thresh">Peak prominence <span class="val" id="threshVal">15&times; local</span></label>
+      <input type="range" id="thresh" min="2" max="40" step="1" value="15">
+    </div>
+    <div class="ctl">
+      <label>Notches: <span class="val" id="notchCount">0</span></label>
+      <button id="clearBtn">Clear all</button>
+    </div>
+    <div class="ctl">
+      <label for="source">Image source</label>
+      <select id="source">
+        <option value="interference">Test pattern + diagonal interference</option>
+        <option value="fence">Test pattern + periodic fence</option>
+        <option value="clean">Test pattern, clean</option>
+      </select>
+    </div>
+    <div class="ctl">
+      <label for="upload">&hellip;or load your own</label>
+      <input type="file" id="upload" accept="image/*">
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Image size</div><div class="v" id="sizeStat">256 &times; 256</div></div>
+    <div class="stat"><div class="k">PSNR vs clean source</div><div class="v" id="psnrStat">&mdash;</div></div>
+    <div class="stat"><div class="k">RMS error</div><div class="v" id="rmseStat">&mdash;</div></div>
+    <div class="stat"><div class="k">Spectral energy removed</div><div class="v" id="energyStat">0.00 %</div></div>
+  </div>
+
+  <details open>
+    <summary>What this demonstrates</summary>
+    <p>A periodic interference pattern is, by definition, concentrated at a few
+    discrete frequencies. In the spatial domain it is spread over every pixel and is
+    almost impossible to remove without destroying the image; in the frequency domain
+    it collapses to a small number of isolated bright peaks that can simply be set to
+    zero. This is precisely the argument of &sect;2.5 of the lab manual, and this tool
+    makes the whole loop &mdash; forward transform, surgical edit, inverse transform
+    &mdash; directly manipulable.</p>
+    <ul>
+      <li><strong>Forward transform.</strong> A hand-written radix-2 Cooley&ndash;Tukey
+      FFT is applied separably, rows then columns, giving the complex matrix
+      <code>F</code>. The power spectrum <code>S = |F|&sup2;</code> is real.</li>
+      <li><strong>Display.</strong> <code>fftshift</code> moves DC to the centre, and
+      the <code>S.^0.1</code> compression from &sect;2.5(b) is applied so that
+      components many orders of magnitude below DC remain visible.</li>
+      <li><strong>Notching.</strong> Clicking maps the shifted display coordinate back
+      to the unshifted index, <code>u = (cx + N/2) mod N</code>. Because the input is
+      real, <code>F</code> is conjugate-symmetric, so every notch is mirrored to
+      <code>(N-u, N-v)</code> &mdash; zeroing only one of the pair would leave an
+      imaginary residue in the output.</li>
+      <li><strong>Ideal vs Gaussian.</strong> A hard-zero notch is a rectangle in
+      frequency, whose transform is a sinc, so it rings. The Gaussian profile trades a
+      little residual interference for a visibly cleaner result &mdash; the same
+      ringing-vs-suppression trade-off met in &sect;2.5(e).</li>
+      <li><strong>Peak detection</strong> reproduces the argument used to locate the
+      peaks in <code>pck-int.jpg</code> without <code>ginput</code>: take local maxima
+      of <code>|F|</code> outside a DC exclusion disc and keep the strongest.</li>
+    </ul>
+    <p>The <em>fence</em> source is the harder case of &sect;2.5(f): a square-wave-like
+    occluder is not a single sinusoid but a fundamental plus its harmonics, so a single
+    notch pair is never enough and a perfectly clean recovery is not achievable &mdash;
+    exactly the honest outcome the manual anticipates.</p>
+  </details>
+</main>
+
+<script>
+"use strict";
+// =====================================================================
+//  Notch Filter Studio  --  SC4061 Computer Vision, Lab 1 section 2.8
+//  Zero dependencies: every routine below, including the FFT, is
+//  implemented from scratch so the file runs from a bare browser with
+//  no network, no install, no plugins.
+// =====================================================================
+
+const N = 256;                      // power of two, required by radix-2 FFT
+const srcCv  = document.getElementById('srcCanvas');
+const specCv = document.getElementById('specCanvas');
+const outCv  = document.getElementById('outCanvas');
+
+let clean   = new Float64Array(N*N);   // reference image, no interference
+let source  = new Float64Array(N*N);   // what we actually transform
+let Fre = null, Fim = null;            // spectrum of `source`
+let notches = [];                      // [{u,v}] in UNSHIFTED index space
+let hasReference = true;               // PSNR only meaningful for synthetic sources
+
+// ---------------------------------------------------------------------
+//  1-D radix-2 Cooley-Tukey FFT, in place.
+// ---------------------------------------------------------------------
+function fft1d(re, im, inverse){
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++){          // bit-reversal permutation
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j){
+      let t = re[i]; re[i] = re[j]; re[j] = t;
+      t = im[i]; im[i] = im[j]; im[j] = t;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1){      // butterfly stages
+    const ang = (inverse ? 2 : -2) * Math.PI / len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    const half = len >> 1;
+    for (let i = 0; i < n; i += len){
+      let cr = 1, ci = 0;
+      for (let k = 0; k < half; k++){
+        const a = i + k, b = a + half;
+        const vr = re[b]*cr - im[b]*ci;
+        const vi = re[b]*ci + im[b]*cr;
+        re[b] = re[a] - vr; im[b] = im[a] - vi;
+        re[a] += vr;        im[a] += vi;
+        const nr = cr*wr - ci*wi; ci = cr*wi + ci*wr; cr = nr;
+      }
+    }
+  }
+  if (inverse) for (let i = 0; i < n; i++){ re[i] /= n; im[i] /= n; }
+}
+
+// ---------------------------------------------------------------------
+//  2-D FFT by separability: transform every row, then every column.
+// ---------------------------------------------------------------------
+function fft2d(re, im, inverse){
+  const tr = new Float64Array(N), ti = new Float64Array(N);
+  for (let y = 0; y < N; y++){
+    const o = y*N;
+    for (let x = 0; x < N; x++){ tr[x] = re[o+x]; ti[x] = im[o+x]; }
+    fft1d(tr, ti, inverse);
+    for (let x = 0; x < N; x++){ re[o+x] = tr[x]; im[o+x] = ti[x]; }
+  }
+  for (let x = 0; x < N; x++){
+    for (let y = 0; y < N; y++){ tr[y] = re[y*N+x]; ti[y] = im[y*N+x]; }
+    fft1d(tr, ti, inverse);
+    for (let y = 0; y < N; y++){ re[y*N+x] = tr[y]; im[y*N+x] = ti[y]; }
+  }
+}
+
+// ---------------------------------------------------------------------
+//  Synthetic imagery
+// ---------------------------------------------------------------------
+function buildTestPattern(){
+  const c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, N, N);
+  grad.addColorStop(0, '#20242c'); grad.addColorStop(1, '#8d97a6');
+  g.fillStyle = grad; g.fillRect(0, 0, N, N);
+  g.fillStyle = '#f2f4f7'; g.fillRect(28, 150, 74, 74);
+  g.strokeStyle = '#0a0c0f'; g.lineWidth = 4; g.strokeRect(28, 150, 74, 74);
+  g.beginPath(); g.arc(196, 186, 36, 0, 6.2832); g.fillStyle = '#12151a'; g.fill();
+  g.strokeStyle = '#f2f4f7'; g.lineWidth = 3; g.stroke();
+  g.fillStyle = '#ffffff'; g.textAlign = 'center';
+  g.font = 'bold 52px Helvetica, Arial, sans-serif'; g.fillText('SC4061', N/2, 66);
+  g.font = '19px Georgia, serif'; g.fillText('Computer Vision', N/2, 94);
+  // Broadband fine detail. This must NOT be periodic: evenly-spaced lines are
+  // themselves a sinusoid and would plant genuine spikes in the spectrum,
+  // which no peak detector could then distinguish from injected interference.
+  // A deterministic LCG keeps the pattern reproducible between runs.
+  let seed = 20250924;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let i = 0; i < 260; i++){
+    const x = 16 + rnd()*224, y = 108 + rnd()*30;
+    g.fillStyle = rnd() > 0.5 ? '#e8ebef' : '#11141a';
+    g.fillRect(x, y, 1 + rnd()*2.5, 1 + rnd()*2.5);
+  }
+  const d = g.getImageData(0, 0, N, N).data;
+  const out = new Float64Array(N*N);
+  for (let i = 0; i < N*N; i++)                      // BT.601 luma, as rgb2gray
+    out[i] = 0.2989*d[i*4] + 0.5870*d[i*4+1] + 0.1140*d[i*4+2];
+  return out;
+}
+
+function addInterference(base, kind){
+  const out = new Float64Array(N*N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){
+    let v = base[y*N+x];
+    if (kind === 'interference'){
+      // one diagonal sinusoid -> exactly one conjugate pair of peaks
+      v += 46 * Math.cos(2*Math.PI*(38*x + 25*y)/N);
+    } else if (kind === 'fence'){
+      // near-square-wave vertical bars -> fundamental plus odd harmonics
+      const f = 2*Math.PI*21*x/N;
+      v += 40*Math.cos(f) + 13*Math.cos(3*f) + 7*Math.cos(5*f);
+    }
+    out[y*N+x] = v;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------
+//  Rendering helpers
+// ---------------------------------------------------------------------
+function drawGray(canvas, data){
+  const g = canvas.getContext('2d');
+  const img = g.createImageData(N, N);
+  for (let i = 0; i < N*N; i++){
+    const v = Math.max(0, Math.min(255, Math.round(data[i])));
+    img.data[i*4] = img.data[i*4+1] = img.data[i*4+2] = v;
+    img.data[i*4+3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+
+// Perceptually-ordered colormap in the spirit of MATLAB's default.
+const CMAP = [[62,38,168],[48,100,235],[10,153,220],[20,190,185],
+              [118,213,121],[214,214,67],[252,166,54],[249,251,20]];
+function colormap(t){
+  t = Math.max(0, Math.min(0.9999, t)) * (CMAP.length - 1);
+  const i = Math.floor(t), f = t - i, a = CMAP[i], b = CMAP[i+1];
+  return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+}
+
+function drawSpectrum(){
+  const g = specCv.getContext('2d');
+  const img = g.createImageData(N, N);
+  const half = N >> 1;
+  // S = |F|^2, displayed as fftshift(S.^0.1) exactly as section 2.5(b) asks.
+  const disp = new Float64Array(N*N);
+  let lo = Infinity, hi = -Infinity;
+  for (let cy = 0; cy < N; cy++) for (let cx = 0; cx < N; cx++){
+    const u = (cx + half) % N, v = (cy + half) % N, k = v*N + u;
+    const S = Fre[k]*Fre[k] + Fim[k]*Fim[k];
+    const d = Math.pow(S, 0.1);
+    disp[cy*N+cx] = d;
+    if (d < lo) lo = d; if (d > hi) hi = d;
+  }
+  // Min-max normalisation washes the display out: after the S^0.1 compression
+  // the bulk of the plane occupies a narrow band and the interference peaks
+  // barely separate from it. Clipping to the 2nd and 99.8th percentiles instead
+  // spends the whole colour range on the part that matters.
+  const sorted = Float64Array.from(disp).sort();
+  lo = sorted[Math.floor(0.02  * (sorted.length - 1))];
+  hi = sorted[Math.floor(0.998 * (sorted.length - 1))];
+  const span = (hi - lo) || 1;
+  for (let i = 0; i < N*N; i++){
+    const [r, gg, b] = colormap((disp[i] - lo) / span);
+    img.data[i*4] = r; img.data[i*4+1] = gg; img.data[i*4+2] = b; img.data[i*4+3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // overlay a ring on every notch so the user can see what has been removed
+  g.strokeStyle = '#ff4d5e'; g.lineWidth = 1.4;
+  const r = +document.getElementById('radius').value;
+  for (const n of notches){
+    const cx = (n.u + half) % N, cy = (n.v + half) % N;
+    g.beginPath(); g.arc(cx + 0.5, cy + 0.5, r + 2.5, 0, 6.2832); g.stroke();
+  }
+}
+
+// ---------------------------------------------------------------------
+//  Pipeline
+// ---------------------------------------------------------------------
+function transformSource(){
+  Fre = Float64Array.from(source);
+  Fim = new Float64Array(N*N);
+  fft2d(Fre, Fim, false);
+}
+
+function wrapDist(a, b){                 // shortest distance on a circular axis
+  const d = Math.abs(a - b);
+  return Math.min(d, N - d);
+}
+
+function applyNotchesAndInvert(){
+  const re = Float64Array.from(Fre), im = Float64Array.from(Fim);
+  const r = +document.getElementById('radius').value;
+  const soft = document.getElementById('profile').value === 'gauss';
+
+  let removed = 0, total = 0;
+  for (let i = 0; i < N*N; i++) total += Fre[i]*Fre[i] + Fim[i]*Fim[i];
+
+  for (const n of notches){
+    // conjugate-symmetric twin: F(-u,-v) = conj(F(u,v)) for a real image, so a
+    // notch must always be applied to both members of the pair.
+    const twins = [[n.u, n.v], [(N - n.u) % N, (N - n.v) % N]];
+    for (const [tu, tv] of twins){
+      for (let dv = -r; dv <= r; dv++) for (let du = -r; du <= r; du++){
+        const dist2 = du*du + dv*dv;
+        if (dist2 > r*r) continue;
+        const u = ((tu + du) % N + N) % N, v = ((tv + dv) % N + N) % N;
+        const k = v*N + u;
+        const before = re[k]*re[k] + im[k]*im[k];
+        // Ideal notch: hard zero. Gaussian notch: 0 at the centre, rising
+        // smoothly back to 1 at the rim, which suppresses the sinc ringing a
+        // rectangular stop-band would introduce.
+        const w = soft ? smoothNotch(dist2, r) : 0;
+        re[k] *= w; im[k] *= w;
+        removed += before - (re[k]*re[k] + im[k]*im[k]);
+      }
+    }
+  }
+
+  fft2d(re, im, true);
+  const outImg = new Float64Array(N*N);
+  for (let i = 0; i < N*N; i++) outImg[i] = re[i];   // imaginary part ~ 0
+  drawGray(outCv, outImg);
+  drawSpectrum();
+
+  document.getElementById('notchCount').textContent = notches.length;
+  document.getElementById('energyStat').textContent =
+      (100 * removed / (total || 1)).toFixed(3) + ' %';
+
+  if (hasReference){
+    let se = 0;
+    for (let i = 0; i < N*N; i++){
+      const d = Math.max(0, Math.min(255, outImg[i])) - clean[i];
+      se += d*d;
+    }
+    const mse = se / (N*N);
+    document.getElementById('rmseStat').textContent = Math.sqrt(mse).toFixed(2);
+    document.getElementById('psnrStat').textContent =
+        mse < 1e-9 ? '∞ dB' : (10 * Math.log10(255*255 / mse)).toFixed(2) + ' dB';
+  } else {
+    document.getElementById('rmseStat').textContent = '—';
+    document.getElementById('psnrStat').textContent = 'n/a (uploaded image)';
+  }
+}
+
+// Gaussian-profiled notch: 0 at the centre, rising smoothly to 1 at the rim.
+function smoothNotch(dist2, r){
+  const sigma = Math.max(r / 1.8, 0.5);
+  return 1 - Math.exp(-dist2 / (2 * sigma * sigma));
+}
+
+// ---------------------------------------------------------------------
+//  Automatic peak detection -- the non-interactive equivalent of ginput.
+// ---------------------------------------------------------------------
+function detectPeaks(thresh, maxPairs){
+  thresh   = thresh   || 15;    // how many times the LOCAL background a peak must be
+  maxPairs = maxPairs || 8;     // hard safety cap
+  const dcGuard = 10;
+  const mag = new Float64Array(N*N);
+  for (let i = 0; i < N*N; i++) mag[i] = Math.hypot(Fre[i], Fim[i]);
+
+  // Step 1: candidate spikes are 5x5 local maxima outside the DC disc.
+  const cand = [];
+  for (let v = 0; v < N; v++) for (let u = 0; u < N; u++){
+    const du = Math.min(u, N-u), dv = Math.min(v, N-v);
+    if (Math.hypot(du, dv) < dcGuard) continue;
+    const m = mag[v*N+u];
+    let isMax = true;
+    for (let dy = -2; dy <= 2 && isMax; dy++) for (let dx = -2; dx <= 2; dx++){
+      if (!dx && !dy) continue;
+      const nu = ((u+dx)%N+N)%N, nv = ((v+dy)%N+N)%N;
+      if (mag[nv*N+nu] > m){ isMax = false; break; }
+    }
+    if (isMax) cand.push({u, v, m});
+  }
+
+  // Step 2: keep only the ones that are spikes against their OWN surroundings.
+  // A global threshold does not work: an image spectrum spans many orders of
+  // magnitude, so ordinary structure clears any fixed cut and the detector
+  // starts gouging real content. An interference component, by contrast, is
+  // isolated -- it towers over the annulus immediately around it, while image
+  // structure sits on a smooth ridge whose neighbours are nearly as bright.
+  const ring = [];
+  for (const c of cand){
+    ring.length = 0;
+    for (let dy = -12; dy <= 12; dy++) for (let dx = -12; dx <= 12; dx++){
+      const d = Math.hypot(dx, dy);
+      if (d < 6 || d > 12) continue;
+      const nu = ((c.u+dx)%N+N)%N, nv = ((c.v+dy)%N+N)%N;
+      ring.push(mag[nv*N+nu]);
+    }
+    ring.sort((a, b) => a - b);
+    const local = ring[ring.length >> 1] || 1e-9;
+    c.ratio = c.m / local;
+  }
+
+  // A prominence ratio alone is not enough. The Nyquist corner (N/2, N/2) is
+  // spectrally isolated by construction and so scores highly while carrying
+  // almost no energy; and in an image with no interference at all, *some*
+  // component is always the most prominent one. Neither should be notched.
+  // The criterion that separates them is energy share: a real interference
+  // component carries a meaningful slice of the spectrum's total power (here,
+  // several per cent), whereas both of those carry essentially none. So we
+  // additionally require each peak to hold at least 0.1 % of the non-DC energy.
+  let totalE = 0;
+  for (let v = 0; v < N; v++) for (let u = 0; u < N; u++){
+    const du = Math.min(u, N-u), dv = Math.min(v, N-v);
+    if (Math.hypot(du, dv) < dcGuard) continue;
+    totalE += mag[v*N+u] * mag[v*N+u];
+  }
+  const minShare = 0.001;
+
+  const keep = cand.filter(c => c.ratio >= thresh &&
+                                (c.m * c.m) / (totalE || 1) >= minShare)
+                   .sort((a, b) => b.ratio - a.ratio);
+
+  // Step 3: drop the conjugate twin of anything already kept, and keep peaks
+  // well separated so one broad blob is not counted several times.
+  const picked = [];
+  for (const c of keep){
+    if (picked.length >= maxPairs) break;
+    if (picked.some(p => (wrapDist(p.u, c.u) < 6 && wrapDist(p.v, c.v) < 6) ||
+                         (wrapDist(p.u, (N-c.u)%N) < 6 && wrapDist(p.v, (N-c.v)%N) < 6)))
+      continue;
+    picked.push(c);
+  }
+  return picked.map(p => ({u: p.u, v: p.v}));
+}
+
+// ---------------------------------------------------------------------
+//  Source management + wiring
+// ---------------------------------------------------------------------
+function loadSynthetic(kind){
+  const base = buildTestPattern();
+  clean = base;
+  source = (kind === 'clean') ? Float64Array.from(base) : addInterference(base, kind);
+  hasReference = true;
+  document.getElementById('sizeStat').textContent = N + ' × ' + N;
+  refresh();
+}
+
+function loadUploaded(file){
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas'); c.width = c.height = N;
+    const g = c.getContext('2d');
+    g.fillStyle = '#000'; g.fillRect(0, 0, N, N);
+    g.drawImage(img, 0, 0, N, N);                 // resample to the FFT size
+    const d = g.getImageData(0, 0, N, N).data;
+    source = new Float64Array(N*N);
+    for (let i = 0; i < N*N; i++)
+      source[i] = 0.2989*d[i*4] + 0.5870*d[i*4+1] + 0.1140*d[i*4+2];
+    clean = Float64Array.from(source);
+    hasReference = false;
+    document.getElementById('sizeStat').textContent =
+        img.width + '×' + img.height + ' → ' + N + '×' + N;
+    document.getElementById('srcHint').textContent =
+        'Uploaded image, converted to greyscale and resampled to ' + N + '×' + N + '.';
+    refresh();
+    URL.revokeObjectURL(img.src);
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function refresh(){
+  notches = [];
+  drawGray(srcCv, source);
+  transformSource();
+  applyNotchesAndInvert();
+}
+
+specCv.addEventListener('click', ev => {
+  const rect = specCv.getBoundingClientRect();
+  const cx = Math.floor((ev.clientX - rect.left) / rect.width  * N);
+  const cy = Math.floor((ev.clientY - rect.top)  / rect.height * N);
+  const half = N >> 1;
+  const u = (cx + half) % N, v = (cy + half) % N;   // shifted -> unshifted index
+  // clicking an existing notch removes it again
+  const hit = notches.findIndex(n => wrapDist(n.u, u) <= 4 && wrapDist(n.v, v) <= 4);
+  if (hit >= 0) notches.splice(hit, 1); else notches.push({u, v});
+  applyNotchesAndInvert();
+});
+
+document.getElementById('radius').addEventListener('input', e => {
+  document.getElementById('radiusVal').textContent = e.target.value + ' px';
+  applyNotchesAndInvert();
+});
+document.getElementById('profile').addEventListener('change', applyNotchesAndInvert);
+document.getElementById('thresh').addEventListener('input', e => {
+  document.getElementById('threshVal').textContent = e.target.value + '\u00d7 local';
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+  notches = []; applyNotchesAndInvert();
+});
+document.getElementById('autoBtn').addEventListener('click', () => {
+  notches = detectPeaks(+document.getElementById('thresh').value);
+  applyNotchesAndInvert();
+});
+document.getElementById('source').addEventListener('change', e => {
+  document.getElementById('srcHint').textContent = {
+    interference: 'Synthetic test image corrupted by a diagonal sinusoidal interference pattern, in the manner of pck-int.jpg.',
+    fence:        'Synthetic test image behind a near-square-wave "fence": a fundamental plus odd harmonics, as in primate-caged.jpg.',
+    clean:        'The clean test image, for reference. Its spectrum has no isolated off-centre peaks.'
+  }[e.target.value];
+  loadSynthetic(e.target.value);
+});
+document.getElementById('upload').addEventListener('change', e => {
+  if (e.target.files && e.target.files[0]) loadUploaded(e.target.files[0]);
+});
+
+loadSynthetic('interference');
+</script>
+</body>
+</html>
