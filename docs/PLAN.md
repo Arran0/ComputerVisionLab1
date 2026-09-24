@@ -162,6 +162,11 @@ and therefore needs a network connection).
 - [x] GNU Octave 8.4 + image package installed; full end-to-end probe passed
   (contrast stretch, `histeq`, `conv2`, `medfilt2`, `fft2`, `maketform`/`imtransform`, headless figure export)
 - [x] Repository scaffolded
-- [ ] §2.1  · [ ] §2.2 · [ ] §2.3 · [ ] §2.4 · [ ] §2.5 · [ ] §2.6 · [ ] §2.7 · [ ] §2.8
+- [x] §2.3(a) Gaussian kernels — both legs agree
+- [x] **§2.8 complete** — `creativity/notch_filter_studio.html`, verified in
+      Chromium, write-up in `creativity/README.md` (deliverable D3 done)
+- [ ] §2.1 · [ ] §2.2 · [ ] §2.3(b–e) · [ ] §2.4 · [ ] §2.5 · [ ] §2.6 — all
+      waiting on the course images
+- [ ] §2.7 — waiting on the lecture-slide algorithm definitions
 - [ ] D2 `matlab/Lab1.m` consolidated
 - [ ] D1 report written and exported
