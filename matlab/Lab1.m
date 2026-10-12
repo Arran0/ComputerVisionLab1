@@ -846,6 +846,16 @@ function d = findImageDir(here, override)
     roots = {here};
     if ~strcmp(pwd, here), roots{end+1} = pwd; end
 
+    % Also look in MATLAB's own default folder and the obvious home-folder
+    % spots. A very common situation is Lab1.m sitting in Downloads, where
+    % the browser put it, while the images were saved into the MATLAB folder:
+    % neither is below the other, so searching only near the script misses
+    % them.
+    for extra = matlabUserFolders()
+        e = extra{1};
+        if ~isempty(e) && ~any(strcmp(roots, e)), roots{end+1} = e; end %#ok<AGROW>
+    end
+
     cand = {};
     for i = 1:numel(roots)
         cand{end+1} = roots{i};                             %#ok<AGROW>
@@ -875,14 +885,51 @@ function d = findImageDir(here, override)
         'Lab1.m needs these six files:\n' ...
         '    mrt-train.jpg   lib-gn.jpg          lib-sp.jpg\n' ...
         '    pck-int.jpg     primate-caged.jpg   book.jpg\n\n' ...
-        'Put them in the same folder as Lab1.m, or anywhere up to three\n' ...
-        'folders below it, or pass the folder explicitly:\n' ...
-        '    Lab1(''all'', ''images'', ''/path/to/your/images'')\n\n']);
+        'The simplest fix is to move Lab1.m into the same folder as the\n' ...
+        'images, then run it again. Or name the folder outright:\n' ...
+        '    Lab1(''all'', ''images'', ''/full/path/to/your/images'')\n\n' ...
+        'To find that path: in the Current Folder panel, open the folder\n' ...
+        'holding the images, then type  pwd  and copy what it prints.\n\n']);
     for i = 1:numel(roots)
         msg = [msg sprintf('Searched under %s, which contains:\n', roots{i})]; %#ok<AGROW>
         msg = [msg listFolder(roots{i})]; %#ok<AGROW>
     end
     error('Lab1:imagesNotFound', '%s', msg);
+end
+
+function folders = matlabUserFolders()
+    % MATLAB's default user folder, plus the usual places people keep course
+    % files. Octave has no userpath, so that call is guarded.
+    folders = {};
+    try
+        if exist('userpath', 'builtin') || exist('userpath', 'file')
+            u = userpath();
+            if ~isempty(u)
+                % Older releases return a pathsep-terminated list.
+                parts = strsplit(u, pathsep);
+                for k = 1:numel(parts)
+                    if ~isempty(parts{k}), folders{end+1} = parts{k}; end %#ok<AGROW>
+                end
+            end
+        end
+    catch
+        % no userpath on this interpreter, which is fine
+    end
+
+    home = getenv('HOME');
+    if isempty(home), home = getenv('USERPROFILE'); end   % Windows
+    if ~isempty(home)
+        folders{end+1} = fullfile(home, 'Documents', 'MATLAB');
+        folders{end+1} = fullfile(home, 'MATLAB');
+        folders{end+1} = fullfile(home, 'Downloads');
+        folders{end+1} = fullfile(home, 'Desktop');
+    end
+
+    keep = {};
+    for k = 1:numel(folders)
+        if exist(folders{k}, 'dir') == 7, keep{end+1} = folders{k}; end %#ok<AGROW>
+    end
+    folders = keep;
 end
 
 function tf = hasLabImages(folder)
