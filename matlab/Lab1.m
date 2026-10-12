@@ -21,12 +21,21 @@ function Lab1(section, varargin)
 %   Lab1('2.5')          run one section only (2.1 ... 2.7)
 %   Lab1('all', 'save')  also write the figures as PNG files into a
 %                        Lab1_results folder beside this script
+%   Lab1('all', 'images', FOLDER)
+%                        load the lab images from FOLDER explicitly
 %
 %   Put Lab1.m and the six lab images in the same folder and run it. No
 %   addpath, no cd and no particular folder layout are required.
 
     if nargin < 1 || isempty(section), section = 'all'; end
     saveFigs = any(strcmpi(varargin, 'save'));
+
+    % Optional explicit image folder: Lab1('all', 'images', '/path/to/images')
+    imgOverride = '';
+    k = find(strcmpi(varargin, 'images'), 1);
+    if ~isempty(k) && numel(varargin) > k
+        imgOverride = varargin{k + 1};
+    end
 
     isOctave = exist('OCTAVE_VERSION', 'builtin') ~= 0;
     if isOctave
@@ -45,7 +54,7 @@ function Lab1(section, varargin)
     here = fileparts(mfilename('fullpath'));
     if isempty(here), here = pwd; end
 
-    ctx = struct('images',   findImageDir(here), ...
+    ctx = struct('images',   findImageDir(here, imgOverride), ...
                  'results',  fullfile(here, 'Lab1_results'), ...
                  'isOctave', isOctave, ...
                  'save',     saveFigs);
@@ -252,7 +261,7 @@ end
 function [P, P2] = sec21(ctx)
     fprintf('2.1 Contrast stretching\n');
 
-    Pc = imread(fullfile(ctx.images, 'mrt-train.jpg'));
+    Pc = imread(labImage(ctx, 'mrt-train.jpg'));
     fprintf('  whos Pc: %s %s\n', mat2str(size(Pc)), class(Pc));
 
     % MATLAB's imread returns the stored 320x443x3 colour array; Octave's
@@ -291,7 +300,7 @@ end
 function [P3, P4] = sec22(ctx)
     fprintf('2.2 Histogram equalisation\n');
 
-    Pc = imread(fullfile(ctx.images, 'mrt-train.jpg'));
+    Pc = imread(labImage(ctx, 'mrt-train.jpg'));
     if ndims(Pc) == 3, P = rgb2gray(Pc); else, P = Pc; end
 
     P3 = asUint8(histeq(P,  255));      % (b) equalise
@@ -375,7 +384,7 @@ function out = applyFilter(img, spec, mode)
 end
 
 function filterAndReport(ctx, imgname, specs, mode, outdirname, figname)
-    img = imread(fullfile(ctx.images, imgname));
+    img = imread(labImage(ctx, imgname));
     if ndims(img) == 3, img = rgb2gray(img); end
 
     fprintf('    %-26s %11s %10s %10s\n', 'variant', 'noise sigma', 'mean grad', 'impulse %');
@@ -430,7 +439,7 @@ function controlledComparison(ctx)
     % on a controlled experiment: add noise of known type to a clean image
     % and measure PSNR against the known original.
     fprintf('\n  Controlled comparison (clean reference available)\n');
-    Pc = imread(fullfile(ctx.images, 'mrt-train.jpg'));
+    Pc = imread(labImage(ctx, 'mrt-train.jpg'));
     if ndims(Pc) == 3, clean = rgb2gray(Pc); else, clean = Pc; end
 
     rand('seed', 20260924); randn('seed', 20260924);
@@ -474,7 +483,7 @@ function sec25(ctx)
     fprintf('2.5 Suppressing noise interference patterns\n');
 
     % ---- (a) display the corrupted image -------------------------------
-    P = imread(fullfile(ctx.images, 'pck-int.jpg'));
+    P = imread(labImage(ctx, 'pck-int.jpg'));
     if ndims(P) == 3, P = rgb2gray(P); end
 
     % ---- (b) Fourier transform and power spectrum -----------------------
@@ -519,7 +528,7 @@ function sec25(ctx)
 
     % ---- (f) free the caged primate -------------------------------------
     fprintf('\n  (f) primate-caged.jpg\n');
-    Q = imread(fullfile(ctx.images, 'primate-caged.jpg'));
+    Q = imread(labImage(ctx, 'primate-caged.jpg'));
     if ndims(Q) == 3, Q = rgb2gray(Q); end
     FQ = fft2(double(Q));
     totalQ = sum(sum(abs(FQ(2:end,2:end)).^2));
@@ -605,7 +614,7 @@ end
 function [U, P2] = sec26(ctx)
     fprintf('2.6 Undoing perspective distortion\n');
 
-    P = imread(fullfile(ctx.images, 'book.jpg'));
+    P = imread(labImage(ctx, 'book.jpg'));
     fprintf('  book.jpg: %s %s\n', mat2str(size(P)), class(P));
 
     % (b) The manual obtains the corners interactively:
@@ -768,7 +777,7 @@ function warpSelfTest(ctx)
     end
 
     % --- 2. the real warp -------------------------------------------------
-    P = imread(fullfile(ctx.images, 'book.jpg'));
+    P = imread(labImage(ctx, 'book.jpg'));
     X = [142.55; 307.74; 255.37;   4.25];
     Y = [ 18.65;  46.71; 217.37; 158.64];
     x = [  0; 210; 210;   0];
@@ -804,33 +813,130 @@ end
 %% ------------------------------------------------------------------------
 %  Locating the images and placing any output
 % -------------------------------------------------------------------------
-function d = findImageDir(here)
-    % Search for the images rather than assuming a folder layout. The flat
-    % case, Lab1.m and the six JPEGs dropped into one folder, is what a
-    % grader will actually do, so it is checked first.
-    cand = { here, ...                            % flat: beside this script
-             fullfile(here, '..', 'images'), ...  % this repository's layout
-             fullfile(here, 'images'), ...        % images/ under the script
-             pwd, ...                             % pasted code, cwd
-             fullfile(pwd, 'images') };
+function d = findImageDir(here, override)
+    % Find the folder holding the lab images.
+    %
+    % An explicit folder always wins. Otherwise the obvious places are tried
+    % first, and if none of them has the images the script's folder and the
+    % working directory are swept recursively, because on MATLAB Drive and
+    % similar setups people often end up with the files one or two folders
+    % down from where the script sits.
+    if nargin >= 2 && ~isempty(override)
+        if hasLabImages(override)
+            d = override;
+            fprintf('Using images from: %s\n\n', d);
+            return;
+        end
+        error('Lab1:imagesNotFound', ...
+              'No lab images in the folder given: %s', override);
+    end
 
+    roots = {here};
+    if ~strcmp(pwd, here), roots{end+1} = pwd; end
+
+    cand = {};
+    for i = 1:numel(roots)
+        cand{end+1} = roots{i};                             %#ok<AGROW>
+        cand{end+1} = fullfile(roots{i}, 'images');         %#ok<AGROW>
+        cand{end+1} = fullfile(roots{i}, '..', 'images');   %#ok<AGROW>
+    end
     for i = 1:numel(cand)
-        if exist(fullfile(cand{i}, 'mrt-train.jpg'), 'file') == 2
+        if hasLabImages(cand{i})
             d = cand{i};
             fprintf('Using images from: %s\n\n', d);
             return;
         end
     end
 
+    for i = 1:numel(roots)
+        hit = searchForImages(roots{i}, 3);
+        if ~isempty(hit)
+            d = hit;
+            fprintf('Using images from: %s\n\n', d);
+            return;
+        end
+    end
+
+    % Nothing found: say what was looked for, where, and what is actually
+    % there, which is far more use than the list of paths on its own.
     msg = sprintf(['Could not find the lab images.\n\n' ...
-        'Put these six files in the same folder as Lab1.m:\n' ...
+        'Lab1.m needs these six files:\n' ...
         '    mrt-train.jpg   lib-gn.jpg          lib-sp.jpg\n' ...
         '    pck-int.jpg     primate-caged.jpg   book.jpg\n\n' ...
-        'Folders searched:\n']);
-    for i = 1:numel(cand)
-        msg = [msg sprintf('    %s\n', cand{i})]; %#ok<AGROW>
+        'Put them in the same folder as Lab1.m, or anywhere up to three\n' ...
+        'folders below it, or pass the folder explicitly:\n' ...
+        '    Lab1(''all'', ''images'', ''/path/to/your/images'')\n\n']);
+    for i = 1:numel(roots)
+        msg = [msg sprintf('Searched under %s, which contains:\n', roots{i})]; %#ok<AGROW>
+        msg = [msg listFolder(roots{i})]; %#ok<AGROW>
     end
     error('Lab1:imagesNotFound', '%s', msg);
+end
+
+function tf = hasLabImages(folder)
+    % Case-insensitive, and tolerant of a .jpeg extension, because MATLAB
+    % Drive is case-sensitive and re-saved files sometimes change extension.
+    tf = false;
+    if isempty(folder) || exist(folder, 'dir') ~= 7, return; end
+    L = dir(folder);
+    if isempty(L), return; end
+    names = lower({L(~[L.isdir]).name});
+    tf = any(strcmp(names, 'mrt-train.jpg')) || ...
+         any(strcmp(names, 'mrt-train.jpeg'));
+end
+
+function hit = searchForImages(root, depth)
+    hit = '';
+    if depth < 0 || isempty(root) || exist(root, 'dir') ~= 7, return; end
+    if hasLabImages(root), hit = root; return; end
+    L = dir(root);
+    for k = 1:numel(L)
+        if ~L(k).isdir, continue; end
+        nm = L(k).name;
+        if strcmp(nm, '.') || strcmp(nm, '..') || nm(1) == '.', continue; end
+        hit = searchForImages(fullfile(root, nm), depth - 1);
+        if ~isempty(hit), return; end
+    end
+end
+
+function s = listFolder(folder)
+    s = '';
+    if isempty(folder) || exist(folder, 'dir') ~= 7
+        s = sprintf('    (not a folder)\n'); return;
+    end
+    L = dir(folder);
+    n = 0;
+    for k = 1:numel(L)
+        nm = L(k).name;
+        if strcmp(nm, '.') || strcmp(nm, '..'), continue; end
+        if L(k).isdir
+            s = [s sprintf('    [dir]  %s\n', nm)]; %#ok<AGROW>
+        else
+            s = [s sprintf('           %s\n', nm)]; %#ok<AGROW>
+        end
+        n = n + 1;
+        if n >= 25, s = [s sprintf('           ... and more\n')]; break; end %#ok<AGROW>
+    end
+    if n == 0, s = sprintf('    (empty)\n'); end
+end
+
+function f = labImage(ctx, name)
+    % Resolve one image by name, case-insensitively and allowing .jpeg, so a
+    % re-saved or renamed upload still loads.
+    f = fullfile(ctx.images, name);
+    if exist(f, 'file') == 2, return; end
+    L = dir(ctx.images);
+    files = {L(~[L.isdir]).name};
+    [base, ~] = strtok(name, '.');
+    want = {lower(name), [lower(base) '.jpeg'], [lower(base) '.jpg']};
+    for k = 1:numel(files)
+        if any(strcmp(lower(files{k}), want))
+            f = fullfile(ctx.images, files{k});
+            return;
+        end
+    end
+    error('Lab1:imageMissing', ...
+          'Could not find %s in %s', name, ctx.images);
 end
 
 function f = newFigure(ctx)

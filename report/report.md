@@ -17,9 +17,14 @@ report comes from an actual run rather than from expectation.
 * **`Lab1.m`**: the complete source in one file, as required. It executes all
   seven sections end to end with no errors. It is self-contained: put it and
   the six lab images in any one folder and run `Lab1`, with no `addpath`, no
-  `cd` and no particular folder layout. `Lab1('2.5')` runs a single section,
-  and `Lab1('all', 'save')` additionally writes the figures as PNGs into a
-  `Lab1_results` folder beside the script. Figures are displayed by default.
+  `cd` and no particular folder layout. The images are located by searching
+  rather than by assuming: the script's own folder first, then the usual
+  `images/` variants, then a recursive sweep up to three folders deep,
+  matching filenames case-insensitively and accepting a `.jpeg` extension.
+  `Lab1('all', 'images', FOLDER)` names the folder outright if needed.
+  `Lab1('2.5')` runs a single section, and `Lab1('all', 'save')` additionally
+  writes the figures as PNGs into a `Lab1_results` folder beside the script.
+  Figures are displayed by default.
 * **`lab1.py`**: an independent Python implementation used to render the
   figures and, more importantly, to act as a cross-check. Where the two
   implementations disagree, the disagreement is investigated and reported
