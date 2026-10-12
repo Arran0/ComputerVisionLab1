@@ -167,19 +167,26 @@ and therefore needs a network connection).
    before submission; if no, it ships validated against the Python mirror and,
    where the toolbox overlap allows, GNU Octave.
 
-## Status
+## Status — all deliverables complete
 
-- [x] Manual parsed, all requirements enumerated
-- [x] Toolchain verified: numpy 2.4, scipy 1.17, matplotlib 3.11, pillow 12
-- [x] GNU Octave 8.4 + image package installed; full end-to-end probe passed
-  (contrast stretch, `histeq`, `conv2`, `medfilt2`, `fft2`, `maketform`/`imtransform`, headless figure export)
-- [x] Repository scaffolded
-- [x] §2.3(a) Gaussian kernels — both legs agree
-- [x] **§2.7 complete** — both algorithms, both legs agree exactly; Algorithm 1
-      reproduces the slides' worked example step for step
-- [x] **§2.8 complete** — `creativity/notch_filter_studio.html`, verified in
-      Chromium, write-up in `creativity/README.md` (deliverable D3 done)
-- [ ] §2.1 · [ ] §2.2 · [ ] §2.3(b–e) · [ ] §2.4 · [ ] §2.5 · [ ] §2.6 — all
-      waiting on the course images
-- [ ] D2 `matlab/Lab1.m` consolidated
-- [ ] D1 report written and exported
+| # | Deliverable | File | State |
+|---|---|---|---|
+| D1 | Report (req. 3a) | `report/Lab1_Report.pdf` | 19 pages, every question answered, 18 personal comments |
+| D2 | One `.m` file (req. 3b) | `matlab/Lab1.m` | 700 lines, all 7 sections, runs clean end to end |
+| D3 | §2.8 program (req. 3c) | `creativity/notch_filter_studio.html` | zero dependencies, browser-verified |
+| D4 | Figures | `results/sec2*/` | 15 matplotlib + 13 Octave |
+
+- [x] §2.1 · [x] §2.2 · [x] §2.3 · [x] §2.4 · [x] §2.5 · [x] §2.6 · [x] §2.7 · [x] §2.8
+
+## Remaining for the student
+
+1. **Run `Lab1.m` once under MATLAB R2026b** to capture the authoritative
+   §2.2 numbers. Everything else is cross-verified between Octave and Python
+   and will not change; §2.2 will, because Octave's `histeq` is not
+   MATLAB-compatible. The report currently quotes the MATLAB *algorithm*
+   (mean 127.502, 10-bin ratio 1.19), implemented directly, which should
+   match MATLAB's own `histeq` — this run confirms it.
+2. **Watch for `maketform`/`imtransform` deprecation** in R2026b. `Lab1.m`
+   falls back to `projtform2d`/`imwarp` automatically, so §2.6 works either
+   way, but it is worth noting which path ran.
+3. Submit `Lab1_Report.pdf`, `Lab1.m` and `notch_filter_studio.html`.
