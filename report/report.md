@@ -15,7 +15,11 @@ All seven experiments are implemented twice, and every number quoted in this
 report comes from an actual run rather than from expectation.
 
 * **`Lab1.m`**: the complete source in one file, as required. It executes all
-  seven sections end to end with no errors.
+  seven sections end to end with no errors. It is self-contained: put it and
+  the six lab images in any one folder and run `Lab1`, with no `addpath`, no
+  `cd` and no particular folder layout. `Lab1('2.5')` runs a single section,
+  and `Lab1('all', 'save')` additionally writes the figures as PNGs into a
+  `Lab1_results` folder beside the script. Figures are displayed by default.
 * **`lab1.py`**: an independent Python implementation used to render the
   figures and, more importantly, to act as a cross-check. Where the two
   implementations disagree, the disagreement is investigated and reported
@@ -492,7 +496,13 @@ P2 = imtransform(P, T, 'XData', [0 210], 'YData', [0 297]);
 
 **Is this what I expected? Yes.** The cover is rectified to a frontal view:
 "Research Report 2001" now sits horizontal, the Nanyang logo is upright, and
-the page fills exactly 210 × 297 pixels at 1 pixel per millimetre.
+the page is reproduced at exactly 1 pixel per millimetre.
+
+One detail is worth stating precisely, because the two implementations report
+different sizes. `imtransform`'s `XData` and `YData` limits are *inclusive*, so
+`[0 210]` spans 211 columns and `[0 297]` spans 298 rows: the MATLAB output is
+298 × 211. The Python mirror samples 210 × 297 pixel centres instead. The scale
+is 1 px = 1 mm either way; the difference is one boundary row and column.
 
 **Comment on quality, and reasons.** The result is geometrically correct but
 noticeably soft, and the softness is *not uniform*:
@@ -526,6 +536,22 @@ noticeably soft, and the softness is *not uniform*:
 > that the text baselines come out straight and parallel across the full page
 > width: those points were never used in the fit, so their straightness is real
 > evidence that the recovered homography is right.
+
+> **AMARAVEL BABU ARRAN's comment:** `maketform` and `imtransform` are both
+> legacy functions, so `Lab1.m` falls back to `projtform2d`/`imwarp` and then
+> to `projective2d`/`imwarp` if a future release drops them. I checked whether
+> those fallbacks had ever actually run, and they had not: Octave supplies
+> `maketform` and `imtransform` but none of the `imwarp` family, so the first
+> branch always executed and the rest were untested code. Rather than ship a
+> dependency I could not exercise, I added a final branch that uses no toolbox
+> function at all, inverse-mapping each output pixel and resampling bilinearly,
+> and tested that one. Writing the test found two genuine bugs in it: the
+> `XData`/`YData` limits are inclusive, so an A4 page is 298 × 211 rather than
+> 297 × 210; and MATLAB places the first pixel's centre at (1, 1) rather than
+> (0, 0), so treating coordinates as zero-based displaced the whole image by
+> one pixel. Both now pass an identity-transform check that reproduces
+> `imtransform` exactly, with max |difference| = 0. On `book.jpg` the geometry
+> agrees and only a few grey levels of resampling difference remain.
 
 ### (f) The pink screen region
 
