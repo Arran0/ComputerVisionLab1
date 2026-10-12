@@ -16,6 +16,7 @@ deliverables are named in §3 of the manual:
 |---|---|
 | Primary graded code artefact | **`matlab/Lab1.m`** — one `.m` file, matching §3b literally. Verified by real execution under Octave here. Python is a figure-rendering mirror, not a submitted file. |
 | §2.8 topic | **Interactive frequency-domain notch filter** — directly extends §2.5. |
+| Student | AMARAVEL BABU ARRAN (U2423193C), **SC4061** |
 | Report format | **Markdown → PDF**: `report/report.md` is the working copy, `report/Lab1_Report.pdf` the submission. |
 
 ## Strategy
@@ -111,11 +112,29 @@ connected component, report its bounding box in millimetres.
 *Note:* corner coordinates likewise hard-coded after being picked once, with the
 `ginput` call retained but commented, so the script is non-interactive.
 
-### §2.7 Two perceptrons
-Implement Algorithm 1 and Algorithm 2 **exactly as defined in the lecture
-slides**, run both on the slides' worked example, compare convergence
-(iteration count, final weights, decision boundary) and comment.
-*Blocked:* needs the slide pages — see "Inputs still needed" below.
+### §2.7 Two perceptrons — **DONE**
+Algorithm 1 (sequential sample update, slides 31–34) and Algorithm 2 (batch
+delta/LMS rule, slide 35), run on the slides' own example.
+
+**Algorithm 1 reproduces the slides exactly**: converges at k = 12 with
+w = [1, 1, −3]ᵀ, boundary x₁ + x₂ − 3 = 0, via the same intermediate weights
+([3,3,1] → [2,2,0] → …). 6 epochs, 7 updates.
+
+**Algorithm 2** converges to w = [0.5, 0.5, −2]ᵀ, boundary x₁ + x₂ − 4 = 0.
+
+Three findings worth reporting, all measured:
+
+1. **Algorithm 2 cannot use Algorithm 1's learning rate.** The batch update is
+   w ← (I − αR)w + αp with R = Σxᵢxᵢᵀ, so it needs α < 2/λ_max(R) = 0.0925.
+   At α = 1 it diverges outright; at α = 0.05 it converges in 737 epochs.
+2. **The two boundaries differ, and the slides' "symmetric" claim is exact.**
+   Perpendicular distances to the two samples are +2.121 / −0.707 for
+   Algorithm 1 (margin ratio 0.333) but ±1.414 for Algorithm 2 (ratio
+   **1.000**) — Algorithm 2's boundary bisects the two points precisely.
+3. **The mechanism behind it:** Algorithm 1 halts the instant both samples are
+   correctly classified, so it stops wherever it happens to be and hugs the
+   nearer point; Algorithm 2 minimises squared error to targets ±1, which has
+   a unique minimiser and places the line midway regardless of sample order.
 
 ### §2.8 Creativity component
 Single self-contained HTML file, opens in any browser, no install, no build
@@ -144,14 +163,7 @@ and therefore needs a network connection).
    320×443×3 — but a chat paste is re-encoded, and §2.1 turns on the *exact*
    min/max intensities of the original JPEG, so the original file is needed.
    Simplest: upload the whole folder into `images/`.
-2. **Lecture-slide pages defining perceptron Algorithm 1 and Algorithm 2**, plus
-   the worked example the manual says to reproduce. Without these, §2.7 cannot
-   be done to spec — there are several textbook variants and the grader will be
-   comparing against the slides' exact formulation.
-3. **Name and matriculation number**, for the report title page and for the
-   `"xxx (your name)'s comment"` annotations the manual asks for, and which
-   course code applies (SC4061 / CE4003 / CZ4003).
-4. **MATLAB access**, confirm yes/no. If yes, `matlab/Lab1.m` gets a real run
+2. **MATLAB access**, confirm yes/no. If yes, `matlab/Lab1.m` gets a real run
    before submission; if no, it ships validated against the Python mirror and,
    where the toolbox overlap allows, GNU Octave.
 
@@ -163,10 +175,11 @@ and therefore needs a network connection).
   (contrast stretch, `histeq`, `conv2`, `medfilt2`, `fft2`, `maketform`/`imtransform`, headless figure export)
 - [x] Repository scaffolded
 - [x] §2.3(a) Gaussian kernels — both legs agree
+- [x] **§2.7 complete** — both algorithms, both legs agree exactly; Algorithm 1
+      reproduces the slides' worked example step for step
 - [x] **§2.8 complete** — `creativity/notch_filter_studio.html`, verified in
       Chromium, write-up in `creativity/README.md` (deliverable D3 done)
 - [ ] §2.1 · [ ] §2.2 · [ ] §2.3(b–e) · [ ] §2.4 · [ ] §2.5 · [ ] §2.6 — all
       waiting on the course images
-- [ ] §2.7 — waiting on the lecture-slide algorithm definitions
 - [ ] D2 `matlab/Lab1.m` consolidated
 - [ ] D1 report written and exported
