@@ -116,6 +116,22 @@ def section_2_1(show=True):
 # Section 2.2 -- Histogram equalisation
 # --------------------------------------------------------------------------
 
+def matlab_imhist(I, n):
+    """Counts as MATLAB's imhist(I, n) returns them for a uint8 image.
+
+    imhist places n bin CENTRES at linspace(0, 255, n), so the bin width is
+    255/(n-1) and the two end bins are only half as wide as the rest. That is
+    neither numpy's default range=(0,255) binning nor an even 256/n split,
+    and the difference is large: for this image the tallest 10-bin count is
+    50391 under imhist against 50769 and 52253 under those two alternatives.
+    """
+    centres = np.linspace(0, 255, n)
+    edges = np.empty(n + 1)
+    edges[0], edges[-1] = -np.inf, np.inf
+    edges[1:-1] = (centres[:-1] + centres[1:]) / 2.0
+    return np.histogram(np.asarray(I).ravel(), bins=edges)[0]
+
+
 def matlab_histeq(I, n=255):
     """MATLAB's histeq(I, n) for a uint8 greyscale image.
 
@@ -147,14 +163,7 @@ def section_2_2():
     P4 = matlab_histeq(P3, 255)         # (c) re-run on the result
 
     def spread(x, bins):
-        # MATLAB's imhist divides [0,256) into `bins` equal bins of width
-        # 256/bins for a uint8 image. np.histogram's range=(0,255) would use
-        # a width of 255/bins and put 255 in its own edge case, which shifts
-        # the counts slightly, so match MATLAB here: the .m file is the
-        # submitted artefact and its numbers are the ones that must agree.
-        edges = np.arange(bins + 1) * (256.0 / bins)
-        h, _ = np.histogram(x, bins=edges)
-        return h
+        return matlab_imhist(x, bins)
 
     for label, img in (("P  (original)", P), ("P3 (equalised)", P3),
                        ("P4 (equalised twice)", P4)):
@@ -173,8 +182,9 @@ def section_2_2():
                                        (P4, "P4  histeq twice")]):
         axes[row, 0].imshow(img, cmap="gray", vmin=0, vmax=255)
         axes[row, 0].set_title(name); axes[row, 0].axis("off")
-        axes[row, 1].hist(img.ravel(), bins=np.arange(11) * 25.6,
-                          color="#475569", edgecolor="k")
+        _c10 = matlab_imhist(img, 10)
+        axes[row, 1].bar(np.linspace(0, 255, 10), _c10, width=255 / 9,
+                         color="#475569", edgecolor="k")
         axes[row, 1].set_title(f"{name} -- 10 bins")
         axes[row, 2].hist(img.ravel(), bins=256, range=(0, 255), color="#2563eb")
         axes[row, 2].set_title(f"{name} -- 256 bins")
@@ -636,10 +646,10 @@ def section_2_5():
 # adjacent lines. The equivalent ginput call is kept below, commented out.
 #
 #     >> [X Y] = ginput(4)
-BOOK_CORNERS = np.array([[142.55,  18.65],    # top-left,     near "School of..."
-                         [307.74,  46.71],    # top-right,    near the logo
-                         [255.37, 217.37],    # bottom-right
-                         [  4.25, 158.64]])   # bottom-left
+BOOK_CORNERS = np.array([[142.47,  26.37],    # top-left,     near "School of..."
+                         [307.77,  45.28],    # top-right,    near the logo
+                         [255.51, 215.88],    # bottom-right
+                         [  1.17, 158.92]])   # bottom-left
 
 # The book is A4: 210 mm wide x 297 mm tall, and the warped image is to be
 # scaled 1 pixel = 1 mm.

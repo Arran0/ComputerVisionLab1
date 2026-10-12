@@ -116,11 +116,20 @@ limits.
 
 ![Histogram equalisation of `mrt-train.jpg`. Rows: the original, the result of one `histeq` pass, and the result of a second pass. Columns: the image, its 10-bin histogram and its 256-bin histogram. The 10-bin view appears flat while the 256-bin view reveals the comb of occupied and empty levels, and the second pass is visually indistinguishable from the first.](../results/sec22/histogram_equalisation.png)
 
-The 10-bin histogram is a coarse summary: each bar aggregates about 26 grey
-levels, so it shows only the broad shape: a large peak in the dark midtones
-and a long thin tail. The 256-bin histogram resolves every individual grey
-level and exposes structure the 10-bin view hides entirely, including a sharp
-isolated spike near level 180 and the hard cut-offs at 13 and 204.
+The 10-bin histogram is a coarse summary. `imhist` places the ten bin
+*centres* at `linspace(0, 255, 10)`, that is at 0, 28.3, …, 255, so the bin
+width is 255/9 ≈ 28.3 and the first and last bins are only half as wide as the
+other eight. The counts are
+
+    [3, 50391, 39642, 13218, 12633, 9236, 15414, 1223, 0, 0]
+
+which shows the broad shape and nothing more: the two darkest occupied bins
+hold 64 % of all pixels and the two brightest bins are empty.
+
+The 256-bin histogram resolves every individual grey level and exposes
+structure the 10-bin view hides entirely, including a sharp isolated spike
+near level 180 and the hard cut-offs at 13 and 204. Only 192 of the 256 levels
+are used.
 
 ### (b) After equalization
 
@@ -128,15 +137,21 @@ isolated spike near level 180 and the hard cut-offs at 13 and 204.
 P3 = histeq(P, 255);
 ```
 
-| Image | Mean | 10-bin min/max count | Ratio |
-|---|---|---|---|
-| `P` original | 73.989 | 0 / 52 253 | 52 253 |
-| `P3` equalised once | **127.502** | 12 965 / 15 670 | **1.21** |
-| `P4` equalised twice | 127.506 | 12 965 / 15 670 | 1.21 |
+| Image | Mean | 10-bin counts, inner eight | End bins | Distinct levels |
+|---|---|---|---|---|
+| `P` original | 73.989 | 1 223 to 50 391 | 3, 0 | 192 |
+| `P3` equalised once | **127.502** | **15 037 to 16 251** | 7 776, 8 742 | 136 |
+| `P4` equalised twice | 127.506 | 15 037 to 16 251 | 7 776, 8 742 | 135 |
 
-**Are the histograms equalized?** At 10 bins, essentially yes. The
-worst-to-best bin ratio falls from 52 253 to **1.21**, and the mean moves to
-127.502, within 0.002 of the ideal midpoint 127.5.
+The inner eight bins of `P3` agree to within ±4 %. The two end bins hold about
+half as much, which is a consequence of their half width rather than a failure
+of the equalisation, so they are listed separately rather than folded into a
+misleading min/max ratio.
+
+**Are the histograms equalized?** At 10 bins, essentially yes. The eight
+full-width bins move from a spread of 1 223 to 50 391 down to 15 037 to
+16 251, a range of only ±4 %, and the mean moves to 127.502, within 0.002 of
+the ideal midpoint 127.5.
 
 **Similarities and differences between the two views.** Both describe the same
 image, and both show the distribution is now spread across the full range. But
@@ -160,7 +175,9 @@ Running `histeq` a second time on `P3`:
 
 * `max|P4 − P3| = 1`
 * `mean|P4 − P3| = 0.0043`
-* only **0.43 %** of pixels change at all, and those by a single grey level
+* only **615 of 141 760 pixels (0.43 %)** change at all, and those by a single
+  grey level
+* the number of distinct grey levels falls by one, from 136 to 135
 * the 10-bin counts are **identical**
 
 **Does the histogram become more uniform? No.** The operation is already at a
@@ -483,10 +500,10 @@ the cover edges really are straight and the corners are well determined. The
 
 | Corner | Image (X, Y) | Desired (x, y) mm |
 |---|---|---|
-| top-left | (142.55, 18.65) | (0, 0) |
-| top-right | (307.74, 46.71) | (210, 0) |
-| bottom-right | (255.37, 217.37) | (210, 297) |
-| bottom-left | (4.25, 158.64) | (0, 297) |
+| top-left | (142.47, 26.37) | (0, 0) |
+| top-right | (307.77, 45.28) | (210, 0) |
+| bottom-right | (255.51, 215.88) | (210, 297) |
+| bottom-left | (1.17, 158.92) | (0, 297) |
 
 ### (c) The projective matrix
 
@@ -502,21 +519,21 @@ U = reshape([u; 1], 3, 3)';
 ```
 
 ```
-        [  1.194215e+00   1.179798e+00  -1.922385e+02 ]
-  U  =  [ -4.939472e-01   2.907881e+00   1.618020e+01 ]
-        [ -2.604151e-04   3.793097e-03   1.000000e+00 ]
+        [  1.464099e+00   1.560748e+00  -2.497471e+02 ]
+  U  =  [ -4.226511e-01   3.694565e+00  -3.721058e+01 ]
+        [  1.653224e-04   5.347072e-03   1.000000e+00 ]
 ```
 
 **Does the transformation give back the four corners?** Yes, exactly:
 
 | Transformed | Target | Error |
 |---|---|---|
-| (−0.000000, 0.000000) | (0, 0) | 2.9×10⁻¹⁴ |
-| (210.000000, 0.000000) | (210, 0) | 9.7×10⁻¹⁵ |
-| (210.000000, 297.000000) | (210, 297) | 5.7×10⁻¹⁴ |
+| (0.000000, 0.000000) | (0, 0) | 2.5×10⁻¹⁴ |
+| (210.000000, −0.000000) | (210, 0) | 5.5×10⁻¹⁵ |
+| (210.000000, 297.000000) | (210, 297) | 2.8×10⁻¹⁴ |
 | (0.000000, 297.000000) | (0, 297) | 0 |
 
-Maximum error **5.7 × 10⁻¹⁴ mm**, which is machine precision.
+Maximum error **2.8 × 10⁻¹⁴ mm**, which is machine precision.
 
 > **AMARAVEL BABU ARRAN's comment:** This verification is necessary but much
 > weaker than it looks, and it would be a mistake to read it as proof the warp
@@ -554,8 +571,8 @@ implementations report the same size and the same measurements.
 noticeably soft, and the softness is *not uniform*:
 
 1. **Non-uniform resolution, the dominant effect.** In the original, the
-   book's near edge spans about 258 px for 210 mm (1.23 px/mm) while the far
-   edge spans about 168 px for the same 210 mm (0.80 px/mm). The top of the
+   book's near edge spans about 261 px for 210 mm (1.24 px/mm) while the far
+   edge spans about 166 px for the same 210 mm (0.79 px/mm). The top of the
    page is therefore reconstructed from barely half the samples available at
    the bottom. Warping cannot create detail that was never captured, so the top
    of the rectified image is visibly blurrier, clearest in the "School of
@@ -605,10 +622,7 @@ Located by colour thresholding (red clearly dominant over both green and blue,
 adequate saturation and brightness), followed by morphological opening and
 closing and selection of the largest connected component:
 
-**27 × 28 mm, with its top-left corner at about (148, 153) mm on the page.**
-The two implementations agree on the size exactly and on the position to within
-a millimetre, the residual being one pixel of difference in where the colour
-threshold and the morphological clean-up place the region's edge.
+**26 × 26 mm, with its top-left corner at about (151, 158) mm on the page.**
 
 This falls midway down the cover, between the Nanyang logo at the top and
 "2001" at the bottom, which is exactly where the manual describes it. Because

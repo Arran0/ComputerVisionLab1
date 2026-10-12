@@ -50,15 +50,18 @@ P4 = lab1.matlab_histeq(P3, 255)
 check("mean(P)", 73.989, P.mean(), 0.001)
 check("mean(P3)", 127.502, P3.mean(), 0.001)
 check("mean(P4)", 127.506, P4.mean(), 0.001)
-# MATLAB's imhist bin width for a uint8 image is 256/n, which the mirror now
-# matches so that both implementations report the same counts.
-edges = np.arange(11) * 25.6
-h10p = np.histogram(P, bins=edges)[0]
-h10_3 = np.histogram(P3, bins=edges)[0]
-h10_4 = np.histogram(P4, bins=edges)[0]
-check("P 10-bin max count", 52253, int(h10p.max()))
-check("P 10-bin min count", 0, int(h10p.min()))
-check("P3 10-bin ratio", 1.21, h10_3.max() / h10_3.min(), 0.005)
+# imhist places n bin CENTRES at linspace(0,255,n), so the end bins are half
+# width. These counts come from MATLAB's own imhist.
+h10p, h10_3, h10_4 = (lab1.matlab_imhist(x, 10) for x in (P, P3, P4))
+check("P 10-bin counts match MATLAB", True,
+      list(h10p) == [3, 50391, 39642, 13218, 12633, 9236, 15414, 1223, 0, 0])
+check("P3 inner-eight minimum", 15037, int(h10_3[1:-1].min()))
+check("P3 inner-eight maximum", 16251, int(h10_3[1:-1].max()))
+check("P3 end bins", [7776, 8742], [int(h10_3[0]), int(h10_3[-1])])
+check("P distinct levels", 192, len(np.unique(P)))
+check("P3 distinct levels", 136, len(np.unique(P3)))
+check("P4 distinct levels", 135, len(np.unique(P4)))
+check("pixels changed by second pass", 615, int((P4 != P3).sum()))
 check("P3/P4 10-bin counts identical", True, bool((h10_3 == h10_4).all()))
 d = np.abs(P4.astype(int) - P3.astype(int))
 check("max|P4-P3|", 1, int(d.max()))
@@ -192,9 +195,9 @@ check("combined: removed %%", 51.567,
 
 print("\n2.6 Perspective correction")
 U = lab1.projective_matrix(lab1.BOOK_CORNERS, lab1.A4_CORNERS)
-claimed_U = np.array([[1.194215, 1.179798, -192.2385],
-                      [-0.4939472, 2.907881, 16.18020],
-                      [-2.604151e-4, 3.793097e-3, 1.0]])
+claimed_U = np.array([[1.464099, 1.560748, -249.7471],
+                      [-0.4226511, 3.694565, -37.21058],
+                      [1.653224e-4, 5.347072e-3, 1.0]])
 check("U matches report to 6 s.f.", True,
       bool(np.allclose(U, claimed_U, rtol=1e-5, atol=1e-8)))
 X, Y = lab1.BOOK_CORNERS[:, 0], lab1.BOOK_CORNERS[:, 1]
@@ -204,10 +207,10 @@ err = float(np.max(np.hypot(w[0] - lab1.A4_CORNERS[:, 0], w[1] - lab1.A4_CORNERS
 check("max corner error < 1e-13 mm", True, bool(err < 1e-13))
 top = np.hypot(*(lab1.BOOK_CORNERS[1] - lab1.BOOK_CORNERS[0]))
 bot = np.hypot(*(lab1.BOOK_CORNERS[2] - lab1.BOOK_CORNERS[3]))
-check("near edge px for 210 mm", 258, bot, 1.0)
-check("far edge px for 210 mm", 168, top, 1.0)
-check("near edge px/mm", 1.23, bot / 210, 0.01)
-check("far edge px/mm", 0.80, top / 210, 0.01)
+check("near edge px for 210 mm", 261, bot, 1.0)
+check("far edge px for 210 mm", 166, top, 1.0)
+check("near edge px/mm", 1.24, bot / 210, 0.01)
+check("far edge px/mm", 0.79, top / 210, 0.01)
 
 print("\n2.7 Perceptrons")
 w1, trace, ep1 = lab1.perceptron_alg1(lab1.PERCEPTRON_X, lab1.PERCEPTRON_CLASS, 1.0)

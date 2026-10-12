@@ -633,8 +633,8 @@ function [U, P2] = sec26(ctx)
     %        >> [X Y] = ginput(4)
     % Measured once by fitting a line to each cover edge and intersecting
     % adjacent lines (sub-pixel residuals), so the script stays reproducible.
-    X = [142.55; 307.74; 255.37;   4.25];
-    Y = [ 18.65;  46.71; 217.37; 158.64];
+    X = [142.47; 307.77; 255.51;   1.17];
+    Y = [ 26.37;  45.28; 215.88; 158.92];
 
     % the desired corners, in the SAME order: A4 is 210 mm x 297 mm
     x = [  0; 210; 210;   0];
@@ -790,8 +790,8 @@ function warpSelfTest(ctx)
 
     % --- 2. the real warp -------------------------------------------------
     P = imread(labImage(ctx, 'book.jpg'));
-    X = [142.55; 307.74; 255.37;   4.25];
-    Y = [ 18.65;  46.71; 217.37; 158.64];
+    X = [142.47; 307.77; 255.51;   1.17];
+    Y = [ 26.37;  45.28; 215.88; 158.92];
     x = [  0; 210; 210;   0];
     y = [  0;   0; 297; 297];
     A = []; v = [];
@@ -1071,13 +1071,19 @@ function varargout = labImhist(I, n)
         if nargout > 0, varargout{1} = imhist(I, n); else, imhist(I, n); end
         return;
     end
-    w   = 256 / n;                               % imhist's bin width for uint8
-    idx = min(floor(double(I(:)) / w) + 1, n);
-    counts = accumarray(idx, 1, [n 1]);
+    % imhist places n bin CENTRES at linspace(0,255,n) for a uint8 image, so
+    % the width is 255/(n-1) and the two end bins are half width. An even
+    % 256/n split gives visibly different counts.
+    centres = linspace(0, 255, n)';
+    edges   = [-Inf; (centres(1:end-1) + centres(2:end)) / 2; Inf];
+    v = double(I(:));
+    counts = zeros(n, 1);
+    for b = 1:n
+        counts(b) = sum(v >= edges(b) & v < edges(b+1));
+    end
     if nargout > 0
         varargout{1} = counts;
     else
-        centres = ((1:n)' - 0.5) * w;
         bar(centres, counts, 1);
         xlim([0 255]);
     end
