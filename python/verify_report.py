@@ -50,12 +50,15 @@ P4 = lab1.matlab_histeq(P3, 255)
 check("mean(P)", 73.989, P.mean(), 0.001)
 check("mean(P3)", 127.502, P3.mean(), 0.001)
 check("mean(P4)", 127.506, P4.mean(), 0.001)
-h10p = np.histogram(P, bins=10, range=(0, 255))[0]
-h10_3 = np.histogram(P3, bins=10, range=(0, 255))[0]
-h10_4 = np.histogram(P4, bins=10, range=(0, 255))[0]
-check("P 10-bin max count", 50769, int(h10p.max()))
+# MATLAB's imhist bin width for a uint8 image is 256/n, which the mirror now
+# matches so that both implementations report the same counts.
+edges = np.arange(11) * 25.6
+h10p = np.histogram(P, bins=edges)[0]
+h10_3 = np.histogram(P3, bins=edges)[0]
+h10_4 = np.histogram(P4, bins=edges)[0]
+check("P 10-bin max count", 52253, int(h10p.max()))
 check("P 10-bin min count", 0, int(h10p.min()))
-check("P3 10-bin ratio", 1.19, h10_3.max() / h10_3.min(), 0.005)
+check("P3 10-bin ratio", 1.21, h10_3.max() / h10_3.min(), 0.005)
 check("P3/P4 10-bin counts identical", True, bool((h10_3 == h10_4).all()))
 d = np.abs(P4.astype(int) - P3.astype(int))
 check("max|P4-P3|", 1, int(d.max()))

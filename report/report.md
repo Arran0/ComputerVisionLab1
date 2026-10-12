@@ -34,13 +34,26 @@ The two agree throughout: identical Gaussian kernels, identical contrast
 limits, PSNR within 0.03 dB, an identical projective matrix, and an identical
 perceptron trace.
 
-> **AMARAVEL BABU ARRAN's comment:** One section is deliberately exempt from
-> that cross-check. GNU Octave's `histeq` is *not* numerically equivalent to
-> MATLAB's. The Octave source carries an explicit `FIXME` saying so. For §2.2
-> I therefore implemented MATLAB's own documented `histeq` algorithm in the
-> Python mirror instead of trusting Octave. The evidence that this was the
-> right call is that the MATLAB algorithm lands at mean 127.502 against the
-> theoretical ideal of 127.5, whereas Octave gives 128.823.
+`Lab1.m` also carries a compatibility layer for the Image Processing Toolbox.
+The manual assumes that toolbox, but a licence for it and an installation of it
+are different things: a machine can report `license('test','image_toolbox')`
+as 1 and still fail with *Unrecognized function or variable 'imhist'*. Every
+toolbox call therefore goes through a wrapper that uses the real function when
+present and a plain-MATLAB implementation when not, covering `rgb2gray`,
+`imhist`, `histeq`, `medfilt2`, `imshow`, `fspecial`, the morphology and
+labelling used in §2.6(f), and the projective warp. Passing `'notoolbox'`
+forces the fallbacks even where the toolbox exists, which is how they were
+tested: running the whole lab both ways produces the same numbers throughout.
+
+> **AMARAVEL BABU ARRAN's comment:** §2.2 needed care. GNU Octave's `histeq`
+> is *not* numerically equivalent to MATLAB's, and the Octave source carries an
+> explicit `FIXME` saying so, so it could not be used to check this section. I
+> implemented MATLAB's own documented `histeq` algorithm instead, in both the
+> Python mirror and `Lab1.m`'s fallback layer. Two independent pieces of
+> evidence say that was the right call: the MATLAB algorithm lands at mean
+> 127.502 against the theoretical ideal of 127.5 where Octave gives 128.823,
+> and the two implementations of it agree with each other to the last digit on
+> every statistic in the table below, while Octave's disagrees with both.
 
 ---
 
@@ -117,12 +130,12 @@ P3 = histeq(P, 255);
 
 | Image | Mean | 10-bin min/max count | Ratio |
 |---|---|---|---|
-| `P` original | 73.989 | 0 / 50 769 | 50 769 |
-| `P3` equalised once | **127.502** | 12 965 / 15 488 | **1.19** |
-| `P4` equalised twice | 127.506 | 12 965 / 15 488 | 1.19 |
+| `P` original | 73.989 | 0 / 52 253 | 52 253 |
+| `P3` equalised once | **127.502** | 12 965 / 15 670 | **1.21** |
+| `P4` equalised twice | 127.506 | 12 965 / 15 670 | 1.21 |
 
 **Are the histograms equalized?** At 10 bins, essentially yes. The
-worst-to-best bin ratio falls from 50 769 to **1.19**, and the mean moves to
+worst-to-best bin ratio falls from 52 253 to **1.21**, and the mean moves to
 127.502, within 0.002 of the ideal midpoint 127.5.
 
 **Similarities and differences between the two views.** Both describe the same
@@ -503,11 +516,12 @@ P2 = imtransform(P, T, 'XData', [0 210], 'YData', [0 297]);
 "Research Report 2001" now sits horizontal, the Nanyang logo is upright, and
 the page is reproduced at exactly 1 pixel per millimetre.
 
-One detail is worth stating precisely, because the two implementations report
-different sizes. `imtransform`'s `XData` and `YData` limits are *inclusive*, so
-`[0 210]` spans 211 columns and `[0 297]` spans 298 rows: the MATLAB output is
-298 × 211. The Python mirror samples 210 × 297 pixel centres instead. The scale
-is 1 px = 1 mm either way; the difference is one boundary row and column.
+One detail is worth stating precisely. `imtransform`'s `XData` and `YData`
+limits are *inclusive*, so `[0 210]` spans 211 columns and `[0 297]` spans 298
+rows, making the output 298 × 211 rather than 297 × 210. The scale is still
+exactly 1 px = 1 mm; the extra row and column are the far boundary of the page.
+The Python mirror was brought onto the same convention so that both
+implementations report the same size and the same measurements.
 
 **Comment on quality, and reasons.** The result is geometrically correct but
 noticeably soft, and the softness is *not uniform*:
@@ -564,7 +578,10 @@ Located by colour thresholding (red clearly dominant over both green and blue,
 adequate saturation and brightness), followed by morphological opening and
 closing and selection of the largest connected component:
 
-**27 × 28 mm, with its top-left corner at (146, 151) mm on the page.**
+**27 × 28 mm, with its top-left corner at about (148, 153) mm on the page.**
+The two implementations agree on the size exactly and on the position to within
+a millimetre, the residual being one pixel of difference in where the colour
+threshold and the morphological clean-up place the region's edge.
 
 This falls midway down the cover, between the Nanyang logo at the top and
 "2001" at the bottom, which is exactly where the manual describes it. Because

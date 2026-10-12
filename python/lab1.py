@@ -147,7 +147,13 @@ def section_2_2():
     P4 = matlab_histeq(P3, 255)         # (c) re-run on the result
 
     def spread(x, bins):
-        h, _ = np.histogram(x, bins=bins, range=(0, 255))
+        # MATLAB's imhist divides [0,256) into `bins` equal bins of width
+        # 256/bins for a uint8 image. np.histogram's range=(0,255) would use
+        # a width of 255/bins and put 255 in its own edge case, which shifts
+        # the counts slightly, so match MATLAB here: the .m file is the
+        # submitted artefact and its numbers are the ones that must agree.
+        edges = np.arange(bins + 1) * (256.0 / bins)
+        h, _ = np.histogram(x, bins=edges)
         return h
 
     for label, img in (("P  (original)", P), ("P3 (equalised)", P3),
@@ -167,7 +173,7 @@ def section_2_2():
                                        (P4, "P4  histeq twice")]):
         axes[row, 0].imshow(img, cmap="gray", vmin=0, vmax=255)
         axes[row, 0].set_title(name); axes[row, 0].axis("off")
-        axes[row, 1].hist(img.ravel(), bins=10, range=(0, 255),
+        axes[row, 1].hist(img.ravel(), bins=np.arange(11) * 25.6,
                           color="#475569", edgecolor="k")
         axes[row, 1].set_title(f"{name} -- 10 bins")
         axes[row, 2].hist(img.ravel(), bins=256, range=(0, 255), color="#2563eb")
@@ -662,14 +668,24 @@ def projective_matrix(src, dst):
 
 
 def warp_projective(img, U, width, height):
-    """Inverse-map every output pixel through U^-1 and bilinearly resample,
-    which is what imtransform does for 'XData',[0 width],'YData',[0 height]."""
-    Uinv = np.linalg.inv(U)
-    yy, xx = np.meshgrid(np.arange(height), np.arange(width), indexing="ij")
-    P = np.stack([xx.ravel() + 0.5, yy.ravel() + 0.5, np.ones(xx.size)])
-    Q = Uinv @ P
-    sx, sy = Q[0] / Q[2], Q[1] / Q[2]
+    """Inverse-map every output pixel through U^-1 and bilinearly resample.
 
+    Matches MATLAB's imtransform for 'XData',[0 width],'YData',[0 height] in
+    both conventions that differ between the two languages:
+      * those limits are inclusive, so x runs 0..width over width+1 columns;
+      * MATLAB image spatial coordinates put the first pixel's centre at
+        (1,1), so a spatial coordinate is a 1-based array subscript and has
+        to have 1 subtracted before indexing a 0-based numpy array.
+    """
+    Uinv = np.linalg.inv(U)
+    yy, xx = np.meshgrid(np.arange(height + 1), np.arange(width + 1),
+                         indexing="ij")
+    P = np.stack([xx.ravel().astype(float), yy.ravel().astype(float),
+                  np.ones(xx.size)])
+    Q = Uinv @ P
+    sx, sy = Q[0] / Q[2] - 1.0, Q[1] / Q[2] - 1.0
+
+    height, width = height + 1, width + 1
     H, W = img.shape[:2]
     x0 = np.floor(sx).astype(int); y0 = np.floor(sy).astype(int)
     fx = sx - x0; fy = sy - y0

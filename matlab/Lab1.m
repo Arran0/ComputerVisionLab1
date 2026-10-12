@@ -23,12 +23,24 @@ function Lab1(section, varargin)
 %                        Lab1_results folder beside this script
 %   Lab1('all', 'images', FOLDER)
 %                        load the lab images from FOLDER explicitly
+%   Lab1('all', 'notoolbox')
+%                        force the plain-MATLAB fallbacks for every Image
+%                        Processing Toolbox function
 %
 %   Put Lab1.m and the six lab images in the same folder and run it. No
 %   addpath, no cd and no particular folder layout are required.
 
     if nargin < 1 || isempty(section), section = 'all'; end
     saveFigs = any(strcmpi(varargin, 'save'));
+
+    % Force the plain-MATLAB fallbacks even where the toolbox exists, which
+    % is how they are tested against the toolbox versions.
+    if any(strcmpi(varargin, 'notoolbox'))
+        useToolbox('__forceOff__');
+        fprintf('Toolbox functions disabled: using the built-in fallbacks.\n');
+    else
+        useToolbox('__allowOn__');
+    end
 
     % Optional explicit image folder: Lab1('all', 'images', '/path/to/images')
     imgOverride = '';
@@ -267,7 +279,7 @@ function [P, P2] = sec21(ctx)
     % MATLAB's imread returns the stored 320x443x3 colour array; Octave's
     % GraphicsMagick reader collapses an all-grey JPEG to 2-D, so guard.
     if ndims(Pc) == 3
-        P = rgb2gray(Pc);
+        P = labRgb2Gray(Pc);
     else
         P = Pc;
     end
@@ -282,10 +294,10 @@ function [P, P2] = sec21(ctx)
             min(P2(:)), max(P2(:)));
 
     f = newFigure(ctx);
-    subplot(2,2,1); imshow(P);  title(sprintf('P original (min %d, max %d)', rmin, rmax));
-    subplot(2,2,2); imshow(P2); title('P2 contrast stretched (0..255)');
-    subplot(2,2,3); imhist(P,  256); title('Histogram of P');
-    subplot(2,2,4); imhist(P2, 256); title('Histogram of P2');
+    subplot(2,2,1); labImshow(P);  title(sprintf('P original (min %d, max %d)', rmin, rmax));
+    subplot(2,2,2); labImshow(P2); title('P2 contrast stretched (0..255)');
+    subplot(2,2,3); labImhist(P,  256); title('Histogram of P');
+    subplot(2,2,4); labImhist(P2, 256); title('Histogram of P2');
     finishFigure(ctx, f, 'sec21', 'octave_contrast_stretch.png');
 end
 
@@ -301,15 +313,15 @@ function [P3, P4] = sec22(ctx)
     fprintf('2.2 Histogram equalisation\n');
 
     Pc = imread(labImage(ctx, 'mrt-train.jpg'));
-    if ndims(Pc) == 3, P = rgb2gray(Pc); else, P = Pc; end
+    if ndims(Pc) == 3, P = labRgb2Gray(Pc); else, P = Pc; end
 
-    P3 = asUint8(histeq(P,  255));      % (b) equalise
-    P4 = asUint8(histeq(P3, 255));      % (c) equalise the result again
+    P3 = labHisteq(P,  255);      % (b) equalise
+    P4 = labHisteq(P3, 255);      % (c) equalise the result again
 
     names = {'P  original', 'P3 histeq once', 'P4 histeq twice'};
     imgs  = {P, P3, P4};
     for i = 1:3
-        h10 = imhist(imgs{i}, 10);
+        h10 = labImhist(imgs{i}, 10);
         fprintf('  %-18s mean = %7.3f   10-bin min/max = %6d/%6d   ratio = %7.2f\n', ...
                 names{i}, mean(double(imgs{i}(:))), min(h10), max(h10), ...
                 double(max(h10)) / double(max(min(h10), 1)));
@@ -321,9 +333,9 @@ function [P3, P4] = sec22(ctx)
 
     f = newFigure(ctx);
     for i = 1:3
-        subplot(3,3,(i-1)*3+1); imshow(imgs{i});      title(names{i});
-        subplot(3,3,(i-1)*3+2); imhist(imgs{i},  10); title('10 bins');
-        subplot(3,3,(i-1)*3+3); imhist(imgs{i}, 256); title('256 bins');
+        subplot(3,3,(i-1)*3+1); labImshow(imgs{i});      title(names{i});
+        subplot(3,3,(i-1)*3+2); labImhist(imgs{i},  10); title('10 bins');
+        subplot(3,3,(i-1)*3+3); labImhist(imgs{i}, 256); title('256 bins');
     end
     finishFigure(ctx, f, 'sec22', 'octave_histeq.png');
 end
@@ -379,13 +391,13 @@ function out = applyFilter(img, spec, mode)
         case 'conv'
             out = uint8(min(255, max(0, round(conv2(double(img), spec, 'same')))));
         case 'median'
-            out = medfilt2(img, [spec spec]);
+            out = labMedfilt2(img, [spec spec]);
     end
 end
 
 function filterAndReport(ctx, imgname, specs, mode, outdirname, figname)
     img = imread(labImage(ctx, imgname));
-    if ndims(img) == 3, img = rgb2gray(img); end
+    if ndims(img) == 3, img = labRgb2Gray(img); end
 
     fprintf('    %-26s %11s %10s %10s\n', 'variant', 'noise sigma', 'mean grad', 'impulse %');
     fprintf('    %-26s %11.3f %10.2f %10.3f\n', 'unfiltered', ...
@@ -409,7 +421,7 @@ function filterAndReport(ctx, imgname, specs, mode, outdirname, figname)
 
     f = newFigure(ctx);
     for k = 1:numel(outs)
-        subplot(1, numel(outs), k); imshow(outs{k}); title(labels{k});
+        subplot(1, numel(outs), k); labImshow(outs{k}); title(labels{k});
     end
     finishFigure(ctx, f, outdirname, figname);
 end
@@ -423,7 +435,7 @@ function s = estimateNoiseSigma(img)
 end
 
 function g = meanGradient(img)
-    hx = fspecial('sobel');          % proxy for retained edge sharpness
+    hx = labSobel();          % proxy for retained edge sharpness
     gx = conv2(double(img), hx,  'same');
     gy = conv2(double(img), hx', 'same');
     g  = mean(mean(sqrt(gx.^2 + gy.^2)));
@@ -440,7 +452,7 @@ function controlledComparison(ctx)
     % and measure PSNR against the known original.
     fprintf('\n  Controlled comparison (clean reference available)\n');
     Pc = imread(labImage(ctx, 'mrt-train.jpg'));
-    if ndims(Pc) == 3, clean = rgb2gray(Pc); else, clean = Pc; end
+    if ndims(Pc) == 3, clean = labRgb2Gray(Pc); else, clean = Pc; end
 
     rand('seed', 20260924); randn('seed', 20260924);
 
@@ -484,7 +496,7 @@ function sec25(ctx)
 
     % ---- (a) display the corrupted image -------------------------------
     P = imread(labImage(ctx, 'pck-int.jpg'));
-    if ndims(P) == 3, P = rgb2gray(P); end
+    if ndims(P) == 3, P = labRgb2Gray(P); end
 
     % ---- (b) Fourier transform and power spectrum -----------------------
     F = fft2(double(P));
@@ -520,16 +532,16 @@ function sec25(ctx)
             100 * (1 - sum(sum(abs(G2(2:end,2:end)).^2)) / total));
 
     f = newFigure(ctx);
-    subplot(2,2,1); imshow(P);  title('original pck-int.jpg');
-    subplot(2,2,2); imshow(P5); title('(e) after ideal 5x5 notch');
+    subplot(2,2,1); labImshow(P);  title('original pck-int.jpg');
+    subplot(2,2,2); labImshow(P5); title('(e) after ideal 5x5 notch');
     subplot(2,2,3); imagesc(fftshift(abs(G).^0.2)); axis image; title('notched spectrum');
-    subplot(2,2,4); imshow(P6); title('improved: Gaussian 9x9 notch');
+    subplot(2,2,4); labImshow(P6); title('improved: Gaussian 9x9 notch');
     finishFigure(ctx, f, 'sec25', 'octave_pck_int_notch.png');
 
     % ---- (f) free the caged primate -------------------------------------
     fprintf('\n  (f) primate-caged.jpg\n');
     Q = imread(labImage(ctx, 'primate-caged.jpg'));
-    if ndims(Q) == 3, Q = rgb2gray(Q); end
+    if ndims(Q) == 3, Q = labRgb2Gray(Q); end
     FQ = fft2(double(Q));
     totalQ = sum(sum(abs(FQ(2:end,2:end)).^2));
     pkQ = findPeaks(FQ, 10, 6, 0.001);
@@ -541,9 +553,9 @@ function sec25(ctx)
     Q2 = uint8(min(255, max(0, round(real(ifft2(GQ))))));
 
     f = newFigure(ctx);
-    subplot(1,3,1); imshow(Q);  title('original');
+    subplot(1,3,1); labImshow(Q);  title('original');
     subplot(1,3,2); imagesc(fftshift(abs(FQ).^0.2)); axis image; title('spectrum');
-    subplot(1,3,3); imshow(Q2); title('after notching the harmonics');
+    subplot(1,3,3); labImshow(Q2); title('after notching the harmonics');
     finishFigure(ctx, f, 'sec25', 'octave_primate_notch.png');
 end
 
@@ -659,8 +671,8 @@ function [U, P2] = sec26(ctx)
     end
 
     f = newFigure(ctx);
-    subplot(1,2,1); imshow(P);  title('book.jpg (slanted view)');
-    subplot(1,2,2); imshow(P2); title('P2 warped to frontal A4');
+    subplot(1,2,1); labImshow(P);  title('book.jpg (slanted view)');
+    subplot(1,2,2); labImshow(P2); title('P2 warped to frontal A4');
     finishFigure(ctx, f, 'sec26', 'octave_perspective_warp.png');
 end
 
@@ -671,9 +683,9 @@ function bbox = findPinkRegion(P2)
     mx = max(max(R, G), B); mn = min(min(R, G), B);
     sat = (mx - mn) ./ max(mx, 1);
     pink = (R > G + 25) & (R > B + 25) & (R > 90) & (sat > 0.18);
-    pink = imopen(pink, ones(3,3));
-    pink = imclose(pink, ones(5,5));
-    [lab, n] = bwlabel(pink);
+    pink = labImopen(pink, ones(3,3));
+    pink = labImclose(pink, ones(5,5));
+    [lab, n] = labBwlabel(pink);
     if n == 0, return; end
     best = 0; bi = 0;
     for i = 1:n
@@ -697,13 +709,13 @@ function P2 = warpProjective(P, U, widthMM, heightMM)
     % which means the section still works whichever warping API a given
     % MATLAB release happens to ship, and it is the branch exercised by the
     % self-test in warpSelfTest below.
-    if exist('maketform', 'file') && exist('imtransform', 'file')
+    if useToolbox('maketform') && useToolbox('imtransform')
         T  = maketform('projective', U');
         P2 = imtransform(P, T, 'XData', [0 widthMM], 'YData', [0 heightMM]);
-    elseif exist('projtform2d', 'file') && exist('imwarp', 'file')
+    elseif useToolbox('projtform2d') && useToolbox('imwarp')
         RA = imref2d([heightMM widthMM], [0 widthMM], [0 heightMM]);
         P2 = imwarp(P, projtform2d(U), 'OutputView', RA);
-    elseif exist('projective2d', 'file') && exist('imwarp', 'file')
+    elseif useToolbox('projective2d') && useToolbox('imwarp')
         RA = imref2d([heightMM widthMM], [0 widthMM], [0 heightMM]);
         P2 = imwarp(P, projective2d(U'), 'OutputView', RA);
     else
@@ -960,5 +972,176 @@ function finishFigure(ctx, f, subdir, filename)
         close(f);
     else
         drawnow;          % make sure the figure is actually painted
+    end
+end
+
+%% ========================================================================
+%  Image Processing Toolbox compatibility layer
+%
+%  The lab manual assumes the Image Processing Toolbox, but a licence for
+%  it and an installation of it are different things: a machine can report
+%  license('test','image_toolbox') == 1 and still fail with "Unrecognized
+%  function or variable 'imhist'" because the toolbox was never installed.
+%
+%  Every toolbox call in this file therefore goes through a wrapper that
+%  uses the real function when it is present and falls back to a plain
+%  MATLAB implementation when it is not. Pass 'notoolbox' to Lab1 to force
+%  the fallbacks even where the toolbox exists, which is how they are
+%  tested against the toolbox versions.
+% =========================================================================
+function tf = useToolbox(fname)
+    persistent forceOff
+    if isempty(forceOff), forceOff = false; end
+    if strcmp(fname, '__forceOff__'),  forceOff = true;  tf = false; return; end
+    if strcmp(fname, '__allowOn__'),   forceOff = false; tf = false; return; end
+    tf = ~forceOff && exist(fname, 'file') ~= 0;
+end
+
+function g = labRgb2Gray(I)
+    if useToolbox('rgb2gray'), g = rgb2gray(I); return; end
+    % ITU-R BT.601 luma, which is what rgb2gray computes.
+    d = double(I);
+    g = 0.298936021293775 * d(:,:,1) + ...
+        0.587043074451121 * d(:,:,2) + ...
+        0.114020904255103 * d(:,:,3);
+    if isinteger(I), g = cast(round(g), class(I)); end
+end
+
+function labImshow(I)
+    if useToolbox('imshow'), imshow(I); return; end
+    if islogical(I), I = uint8(I) * 255; end
+    if ndims(I) == 3
+        image(uint8(I));
+    else
+        imagesc(double(I), [0 255]);
+        colormap(gca, gray(256));
+    end
+    axis image; axis off;
+end
+
+function varargout = labImhist(I, n)
+    if useToolbox('imhist')
+        if nargout > 0, varargout{1} = imhist(I, n); else, imhist(I, n); end
+        return;
+    end
+    w   = 256 / n;                               % imhist's bin width for uint8
+    idx = min(floor(double(I(:)) / w) + 1, n);
+    counts = accumarray(idx, 1, [n 1]);
+    if nargout > 0
+        varargout{1} = counts;
+    else
+        centres = ((1:n)' - 0.5) * w;
+        bar(centres, counts, 1);
+        xlim([0 255]);
+    end
+end
+
+function out = labHisteq(I, n)
+    if useToolbox('histeq'), out = asUint8(histeq(I, n)); return; end
+    % The toolbox algorithm: compare the image's cumulative histogram with
+    % the cumulative of a flat n-bin target and, for each of the 256 input
+    % levels, take the output level that minimises the difference.
+    m    = 256;
+    nn   = accumarray(double(I(:)) + 1, 1, [m 1])';
+    cumd = cumsum(nn);
+    cum  = cumsum(ones(1, n) * (numel(I) / n));
+    tol  = ones(n, 1) * (min([nn(1:m-1) 0; 0 nn(2:m)]) / 2);
+    err  = (cum(:) * ones(1, m)) - (ones(n, 1) * cumd) + tol;
+    err(err < -numel(I) * sqrt(eps)) = numel(I);
+    [~, T] = min(err, [], 1);
+    T   = (T - 1) / (n - 1);
+    out = uint8(round(T(double(I) + 1) * 255));
+end
+
+function out = labMedfilt2(I, sz)
+    if useToolbox('medfilt2'), out = medfilt2(I, sz); return; end
+    m = sz(1); n = sz(2);
+    [H, W] = size(I);
+    pr = floor(m / 2); pc = floor(n / 2);
+    Ip = zeros(H + 2*pr, W + 2*pc);              % medfilt2 pads with zeros
+    Ip(pr+1:pr+H, pc+1:pc+W) = double(I);
+    S = zeros(H * W, m * n);
+    k = 0;
+    for dr = 0:m-1
+        for dc = 0:n-1
+            k = k + 1;
+            blk = Ip(dr+1:dr+H, dc+1:dc+W);
+            S(:, k) = blk(:);
+        end
+    end
+    out = cast(reshape(median(S, 2), H, W), class(I));
+end
+
+function h = labSobel()
+    if useToolbox('fspecial'), h = fspecial('sobel'); return; end
+    h = [1 2 1; 0 0 0; -1 -2 -1];
+end
+
+function B = labShift(A, dr, dc)
+    % Shift a logical image, padding with false rather than wrapping.
+    [H, W] = size(A);
+    B = false(H, W);
+    rs = max(1, 1 + dr):min(H, H + dr);
+    cs = max(1, 1 + dc):min(W, W + dc);
+    B(rs, cs) = A(rs - dr, cs - dc);
+end
+
+function B = labMorph(A, se, op)
+    [m, n] = size(se);
+    pr = floor(m / 2); pc = floor(n / 2);
+    B = [];
+    for dr = 0:m-1
+        for dc = 0:n-1
+            if ~se(dr+1, dc+1), continue; end
+            sh = labShift(A, pr - dr, pc - dc);
+            if isempty(B)
+                B = sh;
+            elseif strcmp(op, 'dilate')
+                B = B | sh;
+            else
+                B = B & sh;
+            end
+        end
+    end
+    if isempty(B), B = A; end
+end
+
+function B = labImopen(A, se)
+    if useToolbox('imopen'), B = imopen(A, se); return; end
+    B = labMorph(labMorph(A, se, 'erode'), se, 'dilate');
+end
+
+function B = labImclose(A, se)
+    if useToolbox('imclose'), B = imclose(A, se); return; end
+    B = labMorph(labMorph(A, se, 'dilate'), se, 'erode');
+end
+
+function [L, num] = labBwlabel(BW)
+    if useToolbox('bwlabel'), [L, num] = bwlabel(BW); return; end
+    % Breadth-first flood fill, 8-connected, matching bwlabel's default.
+    [H, W] = size(BW);
+    L = zeros(H, W);
+    num = 0;
+    stack = zeros(H * W, 2);
+    for r0 = 1:H
+        for c0 = 1:W
+            if ~BW(r0, c0) || L(r0, c0) > 0, continue; end
+            num = num + 1;
+            top = 1; stack(1, :) = [r0 c0]; L(r0, c0) = num;
+            while top > 0
+                r = stack(top, 1); c = stack(top, 2); top = top - 1;
+                for dr = -1:1
+                    for dc = -1:1
+                        rr = r + dr; cc = c + dc;
+                        if rr < 1 || rr > H || cc < 1 || cc > W, continue; end
+                        if BW(rr, cc) && L(rr, cc) == 0
+                            L(rr, cc) = num;
+                            top = top + 1;
+                            stack(top, :) = [rr cc];
+                        end
+                    end
+                end
+            end
+        end
     end
 end
