@@ -427,6 +427,351 @@ def section_controlled():
 
 
 # --------------------------------------------------------------------------
+# Section 2.5 -- Suppressing noise interference patterns
+# --------------------------------------------------------------------------
+
+def power_spectrum(F):
+    """S = |F|^2, real by construction."""
+    return np.abs(F) ** 2
+
+
+def find_peaks(F, dc_guard=10, n_pairs=2, min_share=0.001):
+    """Locate isolated interference peaks without ginput.
+
+    Returns one member of each conjugate pair, strongest first, as (v, u)
+    indices into the UNSHIFTED transform -- the coordinates the manual asks
+    to be read off the un-fftshifted spectrum in step (c).
+    """
+    mag = np.abs(F)
+    N0, N1 = mag.shape
+    total = float(np.sum(mag[1:, 1:] ** 2))
+    cand = []
+    for v in range(N0):
+        for u in range(N1):
+            dv, du = min(v, N0 - v), min(u, N1 - u)
+            if np.hypot(du, dv) < dc_guard:
+                continue
+            m = mag[v, u]
+            nb = mag[max(0, v - 2):v + 3, max(0, u - 2):u + 3]
+            if m >= nb.max() and (m * m) / total >= min_share:
+                cand.append((m, v, u))
+    cand.sort(reverse=True)
+
+    picked = []
+    for m, v, u in cand:
+        if len(picked) >= n_pairs:
+            break
+        twin = ((N0 - v) % N0, (N1 - u) % N1)
+        if any((abs(v - pv) < 4 and abs(u - pu) < 4) or
+               (abs(twin[0] - pv) < 4 and abs(twin[1] - pu) < 4)
+               for _, pv, pu in picked):
+            continue
+        picked.append((m, v, u))
+    return [(v, u) for _, v, u in picked]
+
+
+def notch(F, peaks, half=2, profile="ideal"):
+    """Zero (or softly attenuate) a (2*half+1)^2 neighbourhood at each peak and
+    at its conjugate twin. `half=2` gives the manual's 5x5 neighbourhood."""
+    G = F.copy()
+    N0, N1 = F.shape
+    sigma = max(half / 1.8, 0.5)
+    for (v, u) in peaks:
+        for (tv, tu) in ((v, u), ((N0 - v) % N0, (N1 - u) % N1)):
+            for dv in range(-half, half + 1):
+                for du in range(-half, half + 1):
+                    vv, uu = (tv + dv) % N0, (tu + du) % N1
+                    if profile == "ideal":
+                        G[vv, uu] = 0
+                    else:
+                        d2 = dv * dv + du * du
+                        G[vv, uu] *= 1 - np.exp(-d2 / (2 * sigma * sigma))
+    return G
+
+
+def peak_prominence(F, peaks):
+    """Ratio of each peak's magnitude to the median of its surrounding annulus.
+    ~1 means the component is gone; large means it is still standing."""
+    mag = np.abs(F)
+    N0, N1 = mag.shape
+    out = []
+    for (v, u) in peaks:
+        ring = []
+        for dv in range(-12, 13):
+            for du in range(-12, 13):
+                d = np.hypot(dv, du)
+                if 6 <= d <= 12:
+                    ring.append(mag[(v + dv) % N0, (u + du) % N1])
+        out.append(float(mag[v, u] / (np.median(ring) + 1e-9)))
+    return out
+
+
+def _spectrum_image(S):
+    """fftshift(S.^0.1), percentile-clipped for display."""
+    d = np.fft.fftshift(S ** 0.1)
+    lo, hi = np.percentile(d, 2), np.percentile(d, 99.8)
+    return np.clip((d - lo) / (hi - lo + 1e-12), 0, 1)
+
+
+def strongest_remaining(F, dc_guard=10):
+    """Prominence of the most interference-like component still standing.
+    Near 1 means nothing isolated is left; large means more notching is due."""
+    mag = np.abs(F)
+    N0, N1 = mag.shape
+    best = 0.0
+    for v in range(N0):
+        for u in range(N1):
+            dv, du = min(v, N0 - v), min(u, N1 - u)
+            if np.hypot(du, dv) < dc_guard:
+                continue
+            m = mag[v, u]
+            nb = mag[max(0, v - 2):v + 3, max(0, u - 2):u + 3]
+            if m < nb.max():
+                continue
+            best = max(best, peak_prominence(F, [(v, u)])[0])
+    return best
+
+
+def _run_notch_case(name, imgname, n_pairs, variants, fname):
+    img = imread_gray(imgname)
+    F = np.fft.fft2(img.astype(np.float64))
+    S = power_spectrum(F)
+    total = float(np.sum(np.abs(F)[1:, 1:] ** 2))
+
+    peaks = find_peaks(F, n_pairs=n_pairs)
+    print(f"  {name}: peak locations in the unshifted transform")
+    for (v, u) in peaks:
+        share = 100 * abs(F[v, u]) ** 2 / total
+        print(f"    (row {v:3d}, col {u:3d})  0-based   =  "
+              f"({v+1:3d}, {u+1:3d}) in MATLAB 1-based indexing   "
+              f"energy share {share:6.3f} %")
+    print(f"    prominence before notching: "
+          f"{[f'{p:.1f}' for p in peak_prominence(F, peaks)]}")
+
+    print(f"    strongest component before notching: "
+          f"prominence {strongest_remaining(F):.1f}")
+
+    results = [("original", img, None)]
+    for label, half, profile, npair in variants:
+        pk = peaks if npair is None else find_peaks(F, n_pairs=npair)
+        G = notch(F, pk, half=half, profile=profile)
+        out = np.real(np.fft.ifft2(G))
+        out_u8 = np.round(out).clip(0, 255).astype(np.uint8)
+        removed = 100 * (1 - float(np.sum(np.abs(G)[1:, 1:] ** 2)) / total)
+        print(f"    {label:<34s} {len(pk)} pair(s)  energy removed {removed:6.3f} %   "
+              f"strongest left: prominence {strongest_remaining(G):5.1f}")
+        results.append((label, out_u8, G))
+
+    ncol = len(results) + 1
+    fig, axes = plt.subplots(2, ncol, figsize=(3.5 * ncol, 7.2))
+    axes[0, 0].imshow(img, cmap="gray", vmin=0, vmax=255)
+    axes[0, 0].set_title("original", fontsize=9)
+    axes[1, 0].imshow(_spectrum_image(S), cmap="viridis")
+    axes[1, 0].set_title("$fftshift(S^{0.1})$", fontsize=9)
+    for col, (label, out, G) in enumerate(results[1:], start=1):
+        axes[0, col].imshow(out, cmap="gray", vmin=0, vmax=255)
+        axes[0, col].set_title(label, fontsize=9)
+        axes[1, col].imshow(_spectrum_image(power_spectrum(G)), cmap="viridis")
+        axes[1, col].set_title("spectrum after notching", fontsize=9)
+    # final column: zoomed spectrum around a peak, before notching
+    v, u = peaks[0]
+    sh = np.fft.fftshift(S ** 0.1)
+    cv, cu = (v + S.shape[0] // 2) % S.shape[0], (u + S.shape[1] // 2) % S.shape[1]
+    axes[0, -1].imshow(sh[max(0, cv-20):cv+20, max(0, cu-20):cu+20], cmap="viridis")
+    axes[0, -1].set_title("peak, zoomed", fontsize=9)
+    axes[1, -1].axis("off")
+    for ax in axes.ravel():
+        if ax.images:
+            ax.set_xticks([]); ax.set_yticks([])
+    fig.suptitle(name, fontsize=12)
+    fig.tight_layout()
+    savefig(fig, "2.5", fname)
+    return peaks
+
+
+def section_2_5():
+    print("2.5 Suppressing noise interference patterns")
+
+    # (a)-(e) the television-style diagonal interference
+    variants = [("(d) ideal 5x5 notch", 2, "ideal", None),
+                ("improved: ideal 9x9 notch", 4, "ideal", None),
+                ("improved: Gaussian 9x9 notch", 4, "gauss", None)]
+    _run_notch_case("pck-int.jpg -- diagonal interference",
+                    "pck-int.jpg", 2, variants, "pck_int_notch")
+
+    # (f) the caged primate: a fence is a harmonic series, not one sinusoid
+    print()
+    variants_f = [("1 pair, ideal 5x5", 2, "ideal", 1),
+                  ("6 pairs, ideal 5x5", 2, "ideal", 6),
+                  ("6 pairs, Gaussian 9x9", 4, "gauss", 6)]
+    # the pair count differs per variant, so run them separately
+    img = imread_gray("primate-caged.jpg")
+    F = np.fft.fft2(img.astype(np.float64))
+    total = float(np.sum(np.abs(F)[1:, 1:] ** 2))
+    print("  primate-caged.jpg -- fence harmonics")
+    for npair in (2, 4, 6, 8):
+        pk = find_peaks(F, n_pairs=npair)
+        G = notch(F, pk, half=4, profile="gauss")
+        removed = 100 * (1 - float(np.sum(np.abs(G)[1:, 1:] ** 2)) / total)
+        print(f"    {npair} conjugate pairs notched -> energy removed {removed:6.3f} %")
+    _run_notch_case("primate-caged.jpg -- fence removal",
+                    "primate-caged.jpg", 6, variants_f, "primate_notch")
+
+
+# --------------------------------------------------------------------------
+# Section 2.6 -- Undoing perspective distortion of a planar surface
+# --------------------------------------------------------------------------
+
+# Corners of the book cover in book.jpg, clockwise from the top-left, in the
+# same order as the desired corners below. The manual obtains these with
+# ginput, which is interactive; to keep the script reproducible they were
+# measured once by segmenting the bright cover, fitting a straight line to
+# each of its four edges (sub-pixel residuals, 0.31-0.94 px) and intersecting
+# adjacent lines. The equivalent ginput call is kept below, commented out.
+#
+#     >> [X Y] = ginput(4)
+BOOK_CORNERS = np.array([[142.55,  18.65],    # top-left,     near "School of..."
+                         [307.74,  46.71],    # top-right,    near the logo
+                         [255.37, 217.37],    # bottom-right
+                         [  4.25, 158.64]])   # bottom-left
+
+# The book is A4: 210 mm wide x 297 mm tall, and the warped image is to be
+# scaled 1 pixel = 1 mm.
+A4_CORNERS = np.array([[  0.0,   0.0],
+                       [210.0,   0.0],
+                       [210.0, 297.0],
+                       [  0.0, 297.0]])
+
+
+def projective_matrix(src, dst):
+    """Solve for the 3x3 projective transform using the manual's equation (*).
+
+    Builds the 8x8 system A u = v in which u holds
+    [m11 m12 m13 m21 m22 m23 m31 m32]' and each correspondence contributes two
+    rows, then returns U = reshape([u;1], 3, 3)'.
+    """
+    A, v = [], []
+    for (Xw, Yw), (xim, yim) in zip(src, dst):
+        A.append([Xw, Yw, 1,  0,  0, 0, -xim * Xw, -xim * Yw])
+        A.append([0,  0,  0, Xw, Yw, 1, -yim * Xw, -yim * Yw])
+        v += [xim, yim]
+    A = np.array(A); v = np.array(v)
+    # square for 4 points -> solve; over-determined for more -> least squares
+    u = np.linalg.solve(A, v) if A.shape[0] == 8 else np.linalg.lstsq(A, v, rcond=None)[0]
+    return np.append(u, 1.0).reshape(3, 3)
+
+
+def warp_projective(img, U, width, height):
+    """Inverse-map every output pixel through U^-1 and bilinearly resample,
+    which is what imtransform does for 'XData',[0 width],'YData',[0 height]."""
+    Uinv = np.linalg.inv(U)
+    yy, xx = np.meshgrid(np.arange(height), np.arange(width), indexing="ij")
+    P = np.stack([xx.ravel() + 0.5, yy.ravel() + 0.5, np.ones(xx.size)])
+    Q = Uinv @ P
+    sx, sy = Q[0] / Q[2], Q[1] / Q[2]
+
+    H, W = img.shape[:2]
+    x0 = np.floor(sx).astype(int); y0 = np.floor(sy).astype(int)
+    fx = sx - x0; fy = sy - y0
+    valid = (x0 >= 0) & (x0 < W - 1) & (y0 >= 0) & (y0 < H - 1)
+    x0c = np.clip(x0, 0, W - 2); y0c = np.clip(y0, 0, H - 2)
+
+    def sample(ch):
+        a = ch[y0c, x0c];     b = ch[y0c, x0c + 1]
+        c = ch[y0c + 1, x0c]; d = ch[y0c + 1, x0c + 1]
+        out = (a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) +
+               c * (1 - fx) * fy + d * fx * fy)
+        return np.where(valid, out, 0.0)
+
+    if img.ndim == 3:
+        chans = [sample(img[:, :, k].astype(np.float64)) for k in range(img.shape[2])]
+        out = np.stack(chans, axis=-1).reshape(height, width, img.shape[2])
+    else:
+        out = sample(img.astype(np.float64)).reshape(height, width)
+    return np.round(out).clip(0, 255).astype(np.uint8)
+
+
+def section_2_6():
+    print("2.6 Undoing perspective distortion")
+    from PIL import Image
+    P = np.asarray(Image.open(IMAGES / "book.jpg"))
+    print(f"  book.jpg: {P.shape} {P.dtype}")
+
+    X, Y = BOOK_CORNERS[:, 0], BOOK_CORNERS[:, 1]
+    x, y = A4_CORNERS[:, 0], A4_CORNERS[:, 1]
+    print("  corner correspondences (image -> desired):")
+    for (Xi, Yi), (xi, yi) in zip(BOOK_CORNERS, A4_CORNERS):
+        print(f"    ({Xi:7.2f}, {Yi:7.2f})  ->  ({xi:6.1f}, {yi:6.1f})")
+
+    U = projective_matrix(BOOK_CORNERS, A4_CORNERS)
+    print("\n  projective transformation matrix U:")
+    for row in U:
+        print("    [" + "  ".join(f"{val: .6e}" for val in row) + "]")
+
+    # (c) verification: transform the original corners and check they land on
+    #     the desired ones.  w = U*[X'; Y'; ones(1,4)];  w = w ./ (ones(3,1)*w(3,:))
+    w = U @ np.vstack([X, Y, np.ones(4)])
+    w = w / w[2]
+    print("\n  verification -- U applied to the original corners:")
+    err = 0.0
+    for i in range(4):
+        e = np.hypot(w[0, i] - x[i], w[1, i] - y[i]); err = max(err, e)
+        print(f"    ({w[0, i]:10.6f}, {w[1, i]:10.6f})   target "
+              f"({x[i]:6.1f}, {y[i]:6.1f})   error {e:.3e}")
+    print(f"  max corner error = {err:.3e} mm  "
+          f"(exact to machine precision, as 4 points determine the 8 unknowns)")
+
+    # (d),(e) warp to a 210 x 297 image, 1 pixel = 1 mm
+    P2 = warp_projective(P, U, 210, 297)
+    print(f"\n  warped image: {P2.shape}  (1 pixel = 1 mm)")
+
+    # (f) locate the pink "computer screen" region
+    rgb = P2.astype(np.float64)
+    R, G, B = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    mx = rgb.max(axis=2); mn = rgb.min(axis=2)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1), 0)
+    # pink/salmon: red clearly dominant, reasonably bright, decently saturated
+    pink = (R > G + 25) & (R > B + 25) & (R > 90) & (sat > 0.18)
+    from scipy import ndimage
+    pink = ndimage.binary_opening(pink, np.ones((3, 3)))
+    pink = ndimage.binary_closing(pink, np.ones((5, 5)))
+    lab, n = ndimage.label(pink)
+    print(f"  (f) pink-region search: {n} candidate components")
+    if n:
+        sizes = ndimage.sum(pink, lab, range(1, n + 1))
+        k = int(np.argmax(sizes)) + 1
+        ys, xs = np.nonzero(lab == k)
+        print(f"      largest component: {int(sizes.max())} px "
+              f"({100*sizes.max()/pink.size:.2f} % of the page)")
+        print(f"      bounding box: x {xs.min()}-{xs.max()} mm, "
+              f"y {ys.min()}-{ys.max()} mm  "
+              f"-> {xs.max()-xs.min()+1} x {ys.max()-ys.min()+1} mm")
+        bbox = (xs.min(), ys.min(), xs.max(), ys.max())
+    else:
+        bbox = None
+
+    fig, axes = plt.subplots(1, 3, figsize=(14, 5.4))
+    axes[0].imshow(P)
+    cl = np.vstack([BOOK_CORNERS, BOOK_CORNERS[:1]])
+    axes[0].plot(cl[:, 0], cl[:, 1], "-o", c="lime", lw=2, ms=6)
+    axes[0].set_title("book.jpg with the four measured corners")
+    axes[1].imshow(P2)
+    axes[1].set_title("P2: warped to a frontal A4 view\n210 x 297, 1 px = 1 mm")
+    axes[2].imshow(P2)
+    if bbox:
+        x0, y0, x1, y1 = bbox
+        axes[2].add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0,
+                                        fill=False, ec="#00ffcc", lw=2.2))
+        axes[2].set_title(f"(f) pink screen region\n{x1-x0+1} x {y1-y0+1} mm "
+                          f"at ({x0}, {y0})")
+    for ax in axes:
+        ax.set_xticks([]); ax.set_yticks([])
+    fig.tight_layout()
+    savefig(fig, "2.6", "perspective_warp")
+    return U, P2
+
+
+# --------------------------------------------------------------------------
 # Section 2.7 -- Two perceptrons
 #
 # Algorithm 1 (sequential sample update) and Algorithm 2 (batch delta / LMS
@@ -580,14 +925,92 @@ def _pending(section, what):
     return run
 
 
+
+def dominant_ridge_angle(F, r_min=8, r_max=120):
+    """Angle (radians) of the line through DC carrying the most spectral energy.
+
+    A wavy occluder like the fence is not a single sinusoid: its energy spreads
+    along a continuous ridge through the origin rather than collapsing into
+    isolated peaks, which is why point-notching alone cannot remove it.
+    """
+    mag = np.abs(F)
+    N0, N1 = mag.shape
+    best, best_a = -1.0, 0.0
+    for deg in np.arange(0, 180, 0.5):
+        a = np.deg2rad(deg)
+        rr = np.arange(r_min, r_max)
+        vv = np.round(rr * np.sin(a)).astype(int) % N0
+        uu = np.round(rr * np.cos(a)).astype(int) % N1
+        s = float(np.sum(mag[vv, uu]))
+        if s > best:
+            best, best_a = s, a
+    return best_a
+
+
+def ridge_notch(F, angle, width=2.0, r_min=8, profile="gauss"):
+    """Attenuate a narrow band along the ridge through DC, sparing low
+    frequencies so overall image structure survives."""
+    N0, N1 = F.shape
+    v = np.fft.fftfreq(N0) * N0
+    u = np.fft.fftfreq(N1) * N1
+    U, V = np.meshgrid(u, v)
+    # perpendicular distance from each coefficient to the ridge line
+    d = np.abs(-np.sin(angle) * U + np.cos(angle) * V)
+    radius = np.hypot(U, V)
+    if profile == "ideal":
+        w = np.where((d <= width) & (radius >= r_min), 0.0, 1.0)
+    else:
+        w = 1 - np.exp(-(d ** 2) / (2 * width ** 2))
+        w = np.where(radius >= r_min, w, 1.0)
+    return F * w
+
+
+def section_2_5f_improved():
+    print("2.5(f) further improvement: ridge notching on primate-caged.jpg")
+    img = imread_gray("primate-caged.jpg")
+    F = np.fft.fft2(img.astype(np.float64))
+    total = float(np.sum(np.abs(F)[1:, 1:] ** 2))
+
+    ang = dominant_ridge_angle(F)
+    print(f"  dominant spectral ridge at {np.rad2deg(ang):.1f} deg "
+          f"(fence stripes run perpendicular to this)")
+
+    peaks = find_peaks(F, n_pairs=6)
+    base = notch(F, peaks, half=4, profile="gauss")
+
+    outs = [("original", img)]
+    print(f"  {'variant':<40s} {'removed':>9s} {'strongest left':>15s}")
+    print(f"  {'original':<40s} {'--':>9s} {strongest_remaining(F):15.1f}")
+    for label, G in [
+            ("6 point notches only", base),
+            ("ridge notch, width 2", ridge_notch(F, ang, width=2.0)),
+            ("ridge notch, width 4", ridge_notch(F, ang, width=4.0)),
+            ("6 point notches + ridge width 3",
+             ridge_notch(base, ang, width=3.0))]:
+        out = np.round(np.real(np.fft.ifft2(G))).clip(0, 255).astype(np.uint8)
+        removed = 100 * (1 - float(np.sum(np.abs(G)[1:, 1:] ** 2)) / total)
+        print(f"  {label:<40s} {removed:8.3f}% {strongest_remaining(G):15.1f}")
+        outs.append((label, out))
+
+    fig, axes = plt.subplots(1, len(outs), figsize=(3.6 * len(outs), 4.0))
+    for ax, (label, im) in zip(axes, outs):
+        ax.imshow(im, cmap="gray", vmin=0, vmax=255)
+        ax.set_title(label, fontsize=9); ax.axis("off")
+    fig.suptitle("2.5(f) freeing the primate: point notches vs ridge notching",
+                 fontsize=12)
+    fig.tight_layout()
+    savefig(fig, "2.5", "primate_ridge_notch")
+
+
 SECTIONS = {
     "2.1": section_2_1,
     "2.2": section_2_2,
     "2.3": section_2_3,
     "2.4": section_2_4,
     "ctrl": section_controlled,
-    "2.5": _pending("2.5", "images/pck-int.jpg, images/primate-caged.jpg"),
-    "2.6": _pending("2.6", "images/book.jpg"),
+    "2.5f": section_2_5f_improved,
+    "2.5": section_2_5,
+    "2.6": section_2_6,
     "2.7": section_2_7,
 }
 
