@@ -77,9 +77,26 @@ check("sigma=1 centre:corner", 54.6, k1[2, 2] / k1[0, 0], 0.05)
 check("sigma=2 centre:corner", 2.7, k2[2, 2] / k2[0, 0], 0.05)
 
 gn, sp = lab1.imread_gray("lib-gn.jpg"), lab1.imread_gray("lib-sp.jpg")
-check("lib-sp %% pixels at 0", 1.41, 100 * (sp == 0).mean(), 0.005)
-check("lib-sp %% pixels at 255", 2.39, 100 * (sp == 255).mean(), 0.005)
-check("lib-sp total impulse %%", 3.8, lab1.impulse_fraction(sp), 0.01)
+check("lib-sp %% at exactly 0 or 255", 3.80, lab1.impulse_fraction(sp), 0.01)
+check("lib-sp %% <= 10 or >= 245", 10.96,
+      100 * ((sp <= 10) | (sp >= 245)).mean(), 0.01)
+# Separate true impulses from genuinely saturated scene content by the size
+# of the connected component each extreme pixel belongs to.
+from scipy.ndimage import label as _label
+_m = (sp <= 10) | (sp >= 245)
+_lab, _n = _label(_m)
+_sizes = np.bincount(_lab.ravel())[1:]
+check("lib-sp %% in blobs of <= 4 px (impulses)", 2.20,
+      100 * _sizes[_sizes <= 4].sum() / sp.size, 0.01)
+check("lib-sp %% in blobs of >= 21 px (real scene)", 8.42,
+      100 * _sizes[_sizes >= 21].sum() / sp.size, 0.01)
+from scipy.ndimage import median_filter as _mf
+_r_gn = gn.astype(int) - _mf(gn, size=3, mode="reflect").astype(int)
+_r_sp = sp.astype(int) - _mf(sp, size=3, mode="reflect").astype(int)
+check("lib-gn residual std, impulses excluded", 7.69,
+      _r_gn[np.abs(_r_gn) <= 20].std(), 0.01)
+check("lib-sp residual std, impulses excluded", 3.98,
+      _r_sp[np.abs(_r_sp) <= 20].std(), 0.01)
 
 g1, g2 = lab1._conv_filter(k1), lab1._conv_filter(k2)
 check("lib-gn mean gradient", 79.90, lab1.mean_gradient(gn), 0.01)

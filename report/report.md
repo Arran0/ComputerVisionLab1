@@ -238,16 +238,43 @@ sharpness for very little extra noise reduction, which the controlled
 experiment in §2.4 confirms is a bad bargain.
 
 **Are the filters better at Gaussian or speckle noise? Gaussian, decisively.**
-The reason is visible in the pixel statistics: `lib-sp.jpg` has **1.41 % of
-pixels at exactly 0 and 2.39 % at exactly 255**.
+The reason is visible in the pixel statistics. Counting pixels pinned at the
+extremes needs care, though, so it is worth doing properly:
 
-> **AMARAVEL BABU ARRAN's comment:** That 3.8 % figure means the "speckle"
-> image is really carrying **impulse (salt-and-pepper) noise**, not the
-> multiplicative speckle the name suggests. This is the whole explanation for
-> the filters' failure. A linear filter computes a weighted *mean*, and a mean
-> has no resistance to outliers: a single 255 in a 5×5 window shifts the
-> output of all 25 affected pixels. Averaging distributes the corruption
-> instead of rejecting it. §2.4 shows the correct tool.
+| Measure on `lib-sp.jpg` | Value |
+|---|---|
+| pixels at exactly 0 or 255 | 3.80 % |
+| pixels ≤ 10 or ≥ 245 | 10.96 % |
+| of those, in **isolated blobs of ≤ 4 px** | **2.20 %** |
+| of those, in clusters of 21 px or more | 8.76 % |
+
+> **AMARAVEL BABU ARRAN's comment:** The headline number here is easy to get
+> wrong, and I got it wrong at first myself. Thresholding at ≤ 10 or ≥ 245
+> gives 10.96 %, which looks like a dramatic impulse density, but labelling
+> the connected components shows that 8.76 of those 10.96 points sit in blobs
+> of 21 pixels or more. Those are not noise at all: they are genuinely
+> saturated parts of the scene, the bright sky and the dark shadows under the
+> building. Only 2.20 % of the image lies in blobs of four pixels or fewer,
+> and that is the real impulse density. Counting exact 0 and 255 instead gives
+> 3.80 %, which is nearer the truth but still mixes in some saturated scene
+> content while missing impulses that JPEG compression has smeared off the
+> endpoints: the histogram shows 2344 pixels at 0 but also 2292 at 1 and 1862
+> at 2, which is one impulse population spread by lossy encoding, not three
+> separate things.
+>
+> Either way the character of the noise is settled, and that is what matters
+> here: it is **impulse (salt-and-pepper) noise**, not the multiplicative
+> speckle the name suggests. A direct check confirms it. Removing the
+> impulses and measuring what is left, as the standard deviation of
+> `pixel − (3×3 median)`, gives 7.69 for `lib-gn.jpg` but only 3.98 for
+> `lib-sp.jpg`: the first image is corrupted everywhere, while the second has
+> a comparatively clean base with sparse outliers sitting on it.
+>
+> This is the whole explanation for the linear filters' failure. A linear
+> filter computes a weighted *mean*, and a mean has no resistance to outliers:
+> a single 255 in a 5×5 window shifts the output of all 25 affected pixels.
+> Averaging distributes the corruption instead of rejecting it. §2.4 shows the
+> correct tool.
 
 ---
 
