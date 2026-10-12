@@ -28,19 +28,22 @@
          border:1px solid var(--line);border-radius:6px;display:block}
   #specCanvas{cursor:crosshair}
   .hint{font-size:.72rem;color:var(--muted);min-height:2.4em;line-height:1.4}
-  .bar{margin-top:16px;background:var(--panel);border:1px solid var(--line);
-       border-radius:10px;padding:14px 16px;display:flex;gap:22px;flex-wrap:wrap;align-items:center}
-  .ctl{display:flex;flex-direction:column;gap:5px}
-  .ctl label{font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
-  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
-         border-radius:6px;padding:7px 13px;cursor:pointer;font-size:.82rem;font-family:inherit}
-  button:hover{border-color:var(--accent);color:var(--accent)}
-  button.primary{background:var(--accent);color:#06243a;border-color:var(--accent);font-weight:600}
-  button.primary:hover{filter:brightness(1.1);color:#06243a}
-  input[type=range]{width:150px;accent-color:var(--accent)}
-  select,input[type=file]{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
-         border-radius:6px;padding:6px;font-size:.8rem;font-family:inherit}
-  .val{font-variant-numeric:tabular-nums;color:var(--accent);font-size:.8rem}
+  .bar{margin-top:16px;display:grid;
+       grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:12px}
+  .group{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .group-label{font-size:.68rem;text-transform:uppercase;letter-spacing:1.1px;
+               color:var(--muted);font-weight:600;margin-bottom:9px}
+  .live{background:rgba(126,231,135,.14);color:var(--accent2);border-radius:20px;
+        padding:1px 7px;font-size:.6rem;letter-spacing:.6px;margin-left:5px}
+  .group-body{display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+  label.slider{display:flex;flex-direction:column;gap:4px;font-size:.72rem;
+               color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
+  .status{margin-top:12px;background:var(--panel);border:1px solid var(--line);
+          border-left:3px solid var(--accent);border-radius:8px;padding:10px 14px;
+          font-size:.84rem;color:#c3ced9;line-height:1.5}
+  .status b{color:var(--accent2)}
+  .status.empty{border-left-color:var(--warn)}
+  .status.empty b{color:var(--warn)}
   .stats{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
   .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
   .stat .k{font-size:.66rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
@@ -57,74 +60,86 @@
 <body>
 <header>
   <h1>Notch Filter Studio</h1>
-  <span class="sub">Interactive frequency-domain interference removal &mdash; SC4061 Lab 1, &sect;2.8</span>
+  <span class="sub">Interactive frequency-domain interference removal. SC4061 Lab 1, &sect;2.8</span>
   <span class="tag">no libraries &middot; no install &middot; works offline</span>
 </header>
 
 <main>
   <div class="grid">
     <div class="card">
-      <h2>1 &middot; Input &mdash; spatial domain</h2>
+      <h2>1 &middot; Input: spatial domain</h2>
       <canvas id="srcCanvas" width="256" height="256"></canvas>
       <div class="hint" id="srcHint">Synthetic test image corrupted by a diagonal
         sinusoidal interference pattern, in the manner of <code>pck-int.jpg</code>.</div>
     </div>
     <div class="card">
-      <h2>2 &middot; Power spectrum &mdash; click to notch</h2>
+      <h2>2 &middot; Power spectrum: click to notch</h2>
       <canvas id="specCanvas" width="256" height="256"></canvas>
       <div class="hint" id="specHint">Displaying <code>fftshift(S.^0.1)</code>. DC is at
         the centre. <strong>Click a bright off-centre peak</strong> to zero it; its
         conjugate-symmetric twin is notched automatically.</div>
     </div>
     <div class="card">
-      <h2>3 &middot; Output &mdash; inverse transform</h2>
+      <h2>3 &middot; Output: inverse transform</h2>
       <canvas id="outCanvas" width="256" height="256"></canvas>
       <div class="hint" id="outHint">Real part of <code>ifft2(F)</code> after notching.</div>
     </div>
   </div>
 
   <div class="bar">
-    <div class="ctl">
-      <label for="radius">Notch radius <span class="val" id="radiusVal">2 px</span></label>
-      <input type="range" id="radius" min="1" max="12" step="1" value="2">
+    <div class="group">
+      <div class="group-label">Source</div>
+      <div class="group-body">
+        <select id="source">
+          <option value="interference">Test pattern + diagonal interference</option>
+          <option value="fence">Test pattern + periodic fence</option>
+          <option value="clean">Test pattern, clean</option>
+        </select>
+        <input type="file" id="upload" accept="image/*">
+      </div>
     </div>
-    <div class="ctl">
-      <label for="profile">Notch profile</label>
-      <select id="profile">
-        <option value="ideal">Ideal (hard zero)</option>
-        <option value="gauss">Gaussian (soft roll-off)</option>
-      </select>
+
+    <div class="group">
+      <div class="group-label">Find the peaks</div>
+      <div class="group-body">
+        <button class="primary" id="autoBtn">Detect peaks</button>
+        <button id="clearBtn">Clear</button>
+        <label class="slider">Prominence <span class="val" id="threshVal">15&times;</span>
+          <input type="range" id="thresh" min="2" max="40" step="1" value="15">
+        </label>
+      </div>
     </div>
-    <div class="ctl">
-      <label>Automatic</label>
-      <button class="primary" id="autoBtn">Detect &amp; notch peaks</button>
+
+    <div class="group">
+      <div class="group-label">Shape of each notch <span class="live">live</span></div>
+      <div class="group-body">
+        <label class="slider">Radius <span class="val" id="radiusVal">2 px</span>
+          <input type="range" id="radius" min="1" max="12" step="1" value="2">
+        </label>
+        <select id="profile">
+          <option value="ideal">Ideal (hard zero)</option>
+          <option value="gauss">Gaussian (soft roll-off)</option>
+        </select>
+      </div>
     </div>
-    <div class="ctl">
-      <label for="thresh">Peak prominence <span class="val" id="threshVal">15&times; local</span></label>
-      <input type="range" id="thresh" min="2" max="40" step="1" value="15">
-    </div>
-    <div class="ctl">
-      <label>Notches: <span class="val" id="notchCount">0</span></label>
-      <button id="clearBtn">Clear all</button>
-    </div>
-    <div class="ctl">
-      <label for="source">Image source</label>
-      <select id="source">
-        <option value="interference">Test pattern + diagonal interference</option>
-        <option value="fence">Test pattern + periodic fence</option>
-        <option value="clean">Test pattern, clean</option>
-      </select>
-    </div>
-    <div class="ctl">
-      <label for="upload">&hellip;or load your own</label>
-      <input type="file" id="upload" accept="image/*">
+
+    <div class="group">
+      <div class="group-label">Right-hand panel</div>
+      <div class="group-body">
+        <select id="viewMode">
+          <option value="output">Filtered output</option>
+          <option value="removed">What was removed</option>
+        </select>
+      </div>
     </div>
   </div>
 
+  <div id="status" class="status"></div>
+
   <div class="stats">
     <div class="stat"><div class="k">Image size</div><div class="v" id="sizeStat">256 &times; 256</div></div>
-    <div class="stat"><div class="k">PSNR vs clean source</div><div class="v" id="psnrStat">&mdash;</div></div>
-    <div class="stat"><div class="k">RMS error</div><div class="v" id="rmseStat">&mdash;</div></div>
+    <div class="stat"><div class="k">PSNR vs clean source</div><div class="v" id="psnrStat">n/a</div></div>
+    <div class="stat"><div class="k">RMS error</div><div class="v" id="rmseStat">n/a</div></div>
     <div class="stat"><div class="k">Spectral energy removed</div><div class="v" id="energyStat">0.00 %</div></div>
   </div>
 
@@ -135,8 +150,8 @@
     almost impossible to remove without destroying the image; in the frequency domain
     it collapses to a small number of isolated bright peaks that can simply be set to
     zero. This is precisely the argument of &sect;2.5 of the lab manual, and this tool
-    makes the whole loop &mdash; forward transform, surgical edit, inverse transform
-    &mdash; directly manipulable.</p>
+    makes the whole loop of forward transform, surgical edit and inverse
+    transform directly manipulable.</p>
     <ul>
       <li><strong>Forward transform.</strong> A hand-written radix-2 Cooley&ndash;Tukey
       FFT is applied separably, rows then columns, giving the complex matrix
@@ -147,19 +162,19 @@
       <li><strong>Notching.</strong> Clicking maps the shifted display coordinate back
       to the unshifted index, <code>u = (cx + N/2) mod N</code>. Because the input is
       real, <code>F</code> is conjugate-symmetric, so every notch is mirrored to
-      <code>(N-u, N-v)</code> &mdash; zeroing only one of the pair would leave an
+      <code>(N-u, N-v)</code>. Zeroing only one of the pair would leave an
       imaginary residue in the output.</li>
       <li><strong>Ideal vs Gaussian.</strong> A hard-zero notch is a rectangle in
       frequency, whose transform is a sinc, so it rings. The Gaussian profile trades a
-      little residual interference for a visibly cleaner result &mdash; the same
-      ringing-vs-suppression trade-off met in &sect;2.5(e).</li>
+      little residual interference for a visibly cleaner result, the same
+      ringing-versus-suppression trade-off met in &sect;2.5(e).</li>
       <li><strong>Peak detection</strong> reproduces the argument used to locate the
       peaks in <code>pck-int.jpg</code> without <code>ginput</code>: take local maxima
       of <code>|F|</code> outside a DC exclusion disc and keep the strongest.</li>
     </ul>
     <p>The <em>fence</em> source is the harder case of &sect;2.5(f): a square-wave-like
     occluder is not a single sinusoid but a fundamental plus its harmonics, so a single
-    notch pair is never enough and a perfectly clean recovery is not achievable &mdash;
+    notch pair is never enough and a perfectly clean recovery is not achievable,
     exactly the honest outcome the manual anticipates.</p>
   </details>
 </main>
@@ -183,6 +198,8 @@ let source  = new Float64Array(N*N);   // what we actually transform
 let Fre = null, Fim = null;            // spectrum of `source`
 let notches = [];                      // [{u,v}] in UNSHIFTED index space
 let hasReference = true;               // PSNR only meaningful for synthetic sources
+let autoMode = false;                  // were the current notches placed by the detector?
+let lastOutput = null, lastRemoved = null;
 
 // ---------------------------------------------------------------------
 //  1-D radix-2 Cooley-Tukey FFT, in place.
@@ -391,12 +408,21 @@ function applyNotchesAndInvert(){
   fft2d(re, im, true);
   const outImg = new Float64Array(N*N);
   for (let i = 0; i < N*N; i++) outImg[i] = re[i];   // imaginary part ~ 0
-  drawGray(outCv, outImg);
+
+  // The "removed" view is the difference between input and output, offset to
+  // mid-grey: it shows exactly which signal the notches took out, which makes
+  // over-notching immediately visible as image structure appearing here.
+  const removedImg = new Float64Array(N*N);
+  for (let i = 0; i < N*N; i++) removedImg[i] = (source[i] - outImg[i]) + 128;
+
+  lastOutput = outImg; lastRemoved = removedImg;
+  drawOutputPanel();
   drawSpectrum();
 
-  document.getElementById('notchCount').textContent = notches.length;
   document.getElementById('energyStat').textContent =
       (100 * removed / (total || 1)).toFixed(3) + ' %';
+
+  updateStatus();
 
   if (hasReference){
     let se = 0;
@@ -409,7 +435,7 @@ function applyNotchesAndInvert(){
     document.getElementById('psnrStat').textContent =
         mse < 1e-9 ? '∞ dB' : (10 * Math.log10(255*255 / mse)).toFixed(2) + ' dB';
   } else {
-    document.getElementById('rmseStat').textContent = '—';
+    document.getElementById('rmseStat').textContent = 'n/a';
     document.getElementById('psnrStat').textContent = 'n/a (uploaded image)';
   }
 }
@@ -535,8 +561,49 @@ function loadUploaded(file){
 
 function refresh(){
   notches = [];
+  autoMode = false;
   drawGray(srcCv, source);
   transformSource();
+  // Detect straight away so the page opens showing the method working,
+  // rather than with an untouched image and controls that appear dead.
+  runDetect();
+}
+
+function drawOutputPanel(){
+  const mode = document.getElementById('viewMode').value;
+  drawGray(outCv, mode === 'removed' ? lastRemoved : lastOutput);
+  document.getElementById('outHint').innerHTML = mode === 'removed'
+    ? 'Input minus output, offset to mid-grey. Flat grey means only the '
+      + 'interference was taken; visible image structure here means the '
+      + 'notches are too wide.'
+    : 'Real part of <code>ifft2(F)</code> after notching.';
+}
+
+function updateStatus(){
+  const el = document.getElementById('status');
+  const n = notches.length;
+  if (n === 0){
+    el.className = 'status empty';
+    el.innerHTML = '<b>Nothing notched yet.</b> Press <b>Detect peaks</b>, or '
+      + 'click any bright off-centre spot in the power spectrum. The radius '
+      + 'and profile controls only have something to act on once at least one '
+      + 'notch exists.';
+  } else {
+    el.className = 'status';
+    const r = document.getElementById('radius').value;
+    const prof = document.getElementById('profile').value === 'gauss'
+                 ? 'Gaussian' : 'ideal';
+    el.innerHTML = '<b>' + n + ' notch' + (n > 1 ? 'es' : '') + '</b> placed '
+      + (autoMode ? 'by the detector' : 'by hand') + ', each ' + prof
+      + ', radius <b>' + r + ' px</b>, mirrored to its conjugate twin. '
+      + 'Adjusting the radius or profile updates the result immediately'
+      + (autoMode ? '; changing the prominence threshold re-runs detection.' : '.');
+  }
+}
+
+function runDetect(){
+  autoMode = true;
+  notches = detectPeaks(+document.getElementById('thresh').value);
   applyNotchesAndInvert();
 }
 
@@ -549,6 +616,7 @@ specCv.addEventListener('click', ev => {
   // clicking an existing notch removes it again
   const hit = notches.findIndex(n => wrapDist(n.u, u) <= 4 && wrapDist(n.v, v) <= 4);
   if (hit >= 0) notches.splice(hit, 1); else notches.push({u, v});
+  autoMode = false;                 // the set is now hand-curated
   applyNotchesAndInvert();
 });
 
@@ -558,15 +626,16 @@ document.getElementById('radius').addEventListener('input', e => {
 });
 document.getElementById('profile').addEventListener('change', applyNotchesAndInvert);
 document.getElementById('thresh').addEventListener('input', e => {
-  document.getElementById('threshVal').textContent = e.target.value + '\u00d7 local';
+  document.getElementById('threshVal').textContent = e.target.value + '\u00d7';
+  // Re-detect live. Without this the slider only moved a label, which made it
+  // look inert until the Detect button was pressed again.
+  if (autoMode) runDetect(); else updateStatus();
 });
 document.getElementById('clearBtn').addEventListener('click', () => {
-  notches = []; applyNotchesAndInvert();
+  notches = []; autoMode = false; applyNotchesAndInvert();
 });
-document.getElementById('autoBtn').addEventListener('click', () => {
-  notches = detectPeaks(+document.getElementById('thresh').value);
-  applyNotchesAndInvert();
-});
+document.getElementById('autoBtn').addEventListener('click', runDetect);
+document.getElementById('viewMode').addEventListener('change', drawOutputPanel);
 document.getElementById('source').addEventListener('change', e => {
   document.getElementById('srcHint').textContent = {
     interference: 'Synthetic test image corrupted by a diagonal sinusoidal interference pattern, in the manner of pck-int.jpg.',
